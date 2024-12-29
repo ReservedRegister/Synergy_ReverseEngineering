@@ -9,29 +9,35 @@ bool InitCoreSynergy()
 {
 	disable_internal_remove_incrementor = false;
 
+	bool loaded = true;
+
 	HMODULE server_module = GetModuleHandle("server.dll");
 	HMODULE engine_module = GetModuleHandle("engine.dll");
 
 	ModuleMemory* server_memory = ReadModuleMemory(server_module);
 	ModuleMemory* engine_memory = ReadModuleMemory(engine_module);
 
-	PrintModuleMemoryToScreen(engine_memory);
-
-	if (server_memory && engine_memory)
+	if (server_memory)
 	{
 		server_memory->dll_load_base = 0x10000000;
 		server_memory->dll_rva = 0xC00;
 
 		modules[0] = server_memory;
+	}
+	else
+		loaded = false;
 
+	if (engine_memory)
+	{
 		engine_memory->dll_load_base = 0x10000000;
 		engine_memory->dll_rva = 0xC00;
 
 		modules[1] = engine_memory;
-		return true;
 	}
+	else
+		loaded = false;
 
-	return false;
+	return loaded;
 }
 
 void PopulateHookExclusionListsSynergy()
