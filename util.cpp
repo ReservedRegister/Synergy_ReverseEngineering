@@ -1,933 +1,834 @@
 #include "extension.h"
 #include "util.h"
 
-#include <link.h>
-#include <sys/mman.h>
-
 game_fields fields;
 game_offsets offsets;
 game_functions functions;
+
+ModuleMemory* modules[512] = {};
 
 bool loaded_extension;
 bool firstplayer_hasjoined;
 bool player_collision_rules_changed;
 bool player_worldspawn_collision_disabled;
 
-uint32_t hook_exclude_list_offset[512] = {};
-uint32_t hook_exclude_list_base[512] = {};
-uint32_t memory_prots_save_list[512] = {};
-uint32_t our_libraries[512] = {};
-uint32_t loaded_libraries[512] = {};
-uint32_t collisions_entity_list[512] = {};
-
-uint32_t engine_srv;
-uint32_t dedicated_srv;
-uint32_t vphysics_srv;
-uint32_t server_srv;
-uint32_t server;
-uint32_t sdktools;
-
-uint32_t engine_srv_size;
-uint32_t dedicated_srv_size;
-uint32_t vphysics_srv_size;
-uint32_t server_srv_size;
-uint32_t server_size;
-uint32_t sdktools_size;
-
-bool isTicking;
-bool server_sleeping;
 int hooked_delete_counter;
 int normal_delete_counter;
-uint32_t global_vpk_cache_buffer;
-uint32_t current_vpk_buffer_ref;
 
-ValueList leakedResourcesVpkSystem;
+uint32_t hook_exclude_list_offset[512] = {};
+uint32_t hook_exclude_list_base[512] = {};
+
+ModuleMemory* server_dll;
+ModuleMemory* engine_dll;
+
+SIZE_T server_dll_size;
+SIZE_T engine_dll_size;
+
+uint32_t collisions_entity_list[512] = {};
 
 void InitUtil()
 {
-    loaded_extension = false;
-    firstplayer_hasjoined = false;
-    player_collision_rules_changed = false;
-    player_worldspawn_collision_disabled = false;
-    isTicking = false;
-    hooked_delete_counter = 0;
-    normal_delete_counter = 0;
-    server_sleeping = false;
-    global_vpk_cache_buffer = (uint32_t)malloc(0x00100000);
-    current_vpk_buffer_ref = 0;
+	loaded_extension = false;
+	firstplayer_hasjoined = false;
+	player_collision_rules_changed = false;
+	player_worldspawn_collision_disabled = false;
 }
 
-void LogVpkMemoryLeaks()
+void PrintModuleMemoryToScreen(ModuleMemory* module_memory)
 {
-    Value* firstLeak = *leakedResourcesVpkSystem;
+	MemoryPageSnap* page = module_memory->pages;
 
-    int running_total_of_leaks = 0;
+	while (page)
+	{
+		printf("%p %p %p\n", (void*)page->base_address, (void*)page->region_size, (void*)page->prot_flags);
+		page = page->next_page;
+	}
+}
 
-    while(firstLeak)
-    {
-        VpkMemoryLeak* the_leak = (VpkMemoryLeak*)(firstLeak->value);
+ModuleMemory* FindModule(const char* module_signature)
+{
+	int module_counter = 0;
 
-        ValueList refs = the_leak->leaked_refs;
-        Value* firstLeakedRef = *refs;
+	while (true)
+	{
+		ModuleMemory* module = modules[module_counter];
 
-        int leaked_vpk_refs = 0;
+		if (!module)
+			break;
 
-        while(firstLeakedRef)
-        {
-            leaked_vpk_refs++;
+		if (strstr(module->module_name, module_signature))
+		{
+			printf("Found [%s] at [%p]\n", module->module_name, module->module_base);
+			return module;
+		}
 
-            firstLeakedRef = firstLeakedRef->nextVal;
-        }
+		module_counter++;
+	}
 
-        running_total_of_leaks = running_total_of_leaks + leaked_vpk_refs;
+	return NULL;
+}
 
-        rootconsole->ConsolePrint("Found [%d] leaked refs in object [%p]", leaked_vpk_refs, the_leak->packed_ref);
+void ClearLoadedModules()
+{
+	int module_counter = 0;
 
-        firstLeak = firstLeak->nextVal;
-    }
+	while (true)
+	{
+		ModuleMemory* module = modules[module_counter];
 
-    rootconsole->ConsolePrint("Total VPK leaks [%d]", running_total_of_leaks);
+		if (!module)
+			break;
+
+		MemoryPageSnap* page = module->pages;
+
+		while (page)
+		{
+			MemoryPageSnap* nextPage = page->next_page;
+
+			free(page);
+			page = nextPage;
+		}
+
+		free(module);
+		modules[module_counter] = NULL;
+
+		module_counter++;
+	}
+}
+
+void AllowWriteToModules()
+{
+	int module_counter = 0;
+
+	while (true)
+	{
+		ModuleMemory* module = modules[module_counter];
+
+		if (!module)
+			break;
+
+		AllowWriteToModule(module);
+		module_counter++;
+	}
+}
+
+void AllowWriteToModule(ModuleMemory* module_memory)
+{
+	if (!module_memory)
+		return;
+
+	MemoryPageSnap* page = module_memory->pages;
+
+	while (page)
+	{
+		DWORD oldProtect;
+		if (!VirtualProtect(page->base_address, page->region_size, PAGE_EXECUTE_READWRITE, &oldProtect))
+			printf("Failed to force memory protection!\n");
+
+		printf("Forced access %p %p\n", page->base_address, page->region_size);
+
+		page = page->next_page;
+	}
+}
+
+void RestoreModulesMemory()
+{
+	int module_counter = 0;
+
+	while (true)
+	{
+		ModuleMemory* module = modules[module_counter];
+
+		if (!module)
+			break;
+
+		RestoreModuleMemory(module);
+		module_counter++;
+	}
+}
+
+void RestoreModuleMemory(ModuleMemory* module_memory)
+{
+	if (!module_memory)
+		return;
+
+	MemoryPageSnap* page = module_memory->pages;
+
+	while (page)
+	{
+		DWORD oldProtect;
+		if (!VirtualProtect(page->base_address, page->region_size, page->prot_flags, &oldProtect))
+			printf("Failed to restore memory protection!\n");
+
+		page = page->next_page;
+	}
+}
+
+uint32_t FILEOFF(ModuleMemory* memory_module, uint32_t module_offset)
+{
+	return (uint32_t)memory_module->module_base + module_offset - memory_module->dll_load_base;
+}
+
+ModuleMemory* ReadModuleMemory(HMODULE hModule)
+{
+	if (!hModule)
+	{
+		printf("Invalid module handle.\n");
+		return NULL;
+	}
+
+	MEMORY_BASIC_INFORMATION mbi;
+
+	uintptr_t address = (uintptr_t)hModule;
+	SIZE_T module_size = 0;
+
+	ModuleMemory* new_list = AllocateModuleMemoryList(hModule);
+	GetModuleFileName(hModule, new_list->module_name, MAX_PATH);
+
+	while (VirtualQuery((LPCVOID)address, &mbi, sizeof(mbi)) == sizeof(mbi))
+	{
+		if (mbi.AllocationBase == hModule && mbi.State == MEM_COMMIT)
+		{
+			MemoryPageSnap* new_page = CreateMemoryPage(mbi.BaseAddress, mbi.RegionSize, mbi.Protect);
+			InsertMemoryPageToList(new_list, new_page);
+
+			module_size += mbi.RegionSize;
+		}
+
+		address = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
+	}
+
+	new_list->module_size = module_size;
+	return new_list;
+}
+
+ModuleMemory* AllocateModuleMemoryList(HMODULE module_in)
+{
+	ModuleMemory* new_list = (ModuleMemory*)malloc(sizeof(ModuleMemory));
+
+	new_list->module_base = module_in;
+	new_list->module_size = 0;
+	new_list->pages = NULL;
+
+	return new_list;
+}
+
+MemoryPageSnap* CreateMemoryPage(LPVOID base_address_in, SIZE_T region_size_in, DWORD prot_flags_in)
+{
+	MemoryPageSnap* page_snap = (MemoryPageSnap*)malloc(sizeof(MemoryPageSnap));
+
+	page_snap->base_address = base_address_in;
+	page_snap->region_size = region_size_in;
+	page_snap->prot_flags = prot_flags_in;
+	page_snap->next_page = NULL;
+
+	return page_snap;
+}
+
+void InsertMemoryPageToList(ModuleMemory* pages_list, MemoryPageSnap* page_in)
+{
+	page_in->next_page = pages_list->pages;
+	pages_list->pages = page_in;
 }
 
 void* copy_val(void* val, size_t copy_size)
 {
-    if(val == 0)
-        return 0;
-    
-    void* copy_ptr = malloc(copy_size);
-    memcpy(copy_ptr, val, copy_size);
-    return copy_ptr;
+	if (val == 0)
+		return 0;
+
+	void* copy_ptr = malloc(copy_size);
+	memcpy(copy_ptr, val, copy_size);
+	return copy_ptr;
 }
 
 bool IsAddressExcluded(uint32_t base_address, uint32_t search_address)
 {
-    for(int i = 0; i < 512; i++)
-    {
-        if(hook_exclude_list_offset[i] == 0 || hook_exclude_list_base[i] == 0)
-            continue;
+	for (int i = 0; i < 512; i++)
+	{
+		if (hook_exclude_list_offset[i] == 0 || hook_exclude_list_base[i] == 0)
+			continue;
 
-        uint32_t patch_address = base_address + hook_exclude_list_offset[i];
+		uint32_t patch_address = base_address + hook_exclude_list_offset[i];
 
-        if(patch_address == search_address && hook_exclude_list_base[i] == base_address)
-            return true;
-    }
+		if (patch_address == search_address && hook_exclude_list_base[i] == base_address)
+			return true;
+	}
 
-    return false;
+	return false;
 }
 
-void HookFunctionInSharedObject(uint32_t base_address, uint32_t size, void* target_pointer, void* hook_pointer)
+void HookFunction(uint32_t base_address, uint32_t size, void* target_pointer, void* hook_pointer)
 {
-    uint32_t search_address = base_address;
-    uint32_t search_address_max = base_address+size;
+	uint32_t search_address = base_address;
+	uint32_t search_address_max = base_address + size;
 
-    while(search_address <= search_address_max)
-    {
-        uint32_t four_byte_addr = *(uint32_t*)(search_address);
+	while (search_address + 3 < search_address_max)
+	{
+		uint32_t four_byte_addr = *(uint32_t*)(search_address);
 
-        if(four_byte_addr == (uint32_t)target_pointer)
-        {
-            if(IsAddressExcluded(base_address, search_address))
-            {
-                rootconsole->ConsolePrint("(abs) Skipped patch at [%X]", search_address);
-                search_address++;
-                continue;
-            }
+		if (four_byte_addr == (uint32_t)target_pointer)
+		{
+			if (IsAddressExcluded(base_address, search_address))
+			{
+				rootconsole->ConsolePrint("(abs) Skipped patch at [%X]", search_address);
+				search_address++;
+				continue;
+			}
 
-            //rootconsole->ConsolePrint("Patched abs address: [%X]", search_address);
-            *(uint32_t*)(search_address) = (uint32_t)hook_pointer;
-            
-            search_address++;
-            continue;
-        }
+			//rootconsole->ConsolePrint("Patched abs address: [%X]", search_address);
+			*(uint32_t*)(search_address) = (uint32_t)hook_pointer;
 
-        uint8_t byte = *(uint8_t*)(search_address);
+			search_address++;
+			continue;
+		}
 
-        if(byte == 0xE8 || byte == 0xE9)
-        {
-            uint32_t call_address = *(uint32_t*)(search_address + 1);
-            uint32_t chk = search_address + call_address + 5;
+		uint8_t byte = *(uint8_t*)(search_address);
 
-            if(chk == (uint32_t)target_pointer)
-            {
-                if(IsAddressExcluded(base_address, search_address))
-                {
-                    rootconsole->ConsolePrint("(unsigned) Skipped patch at [%X]", search_address);
-                    search_address++;
-                    continue;
-                }
+		if (byte == 0xE8 || byte == 0xE9)
+		{
+			uint32_t call_address = *(uint32_t*)(search_address + 1);
+			uint32_t chk = search_address + call_address + 5;
 
-                //rootconsole->ConsolePrint("(unsigned) Hooked address: [%X]", search_address - base_address);
-                uint32_t offset = (uint32_t)hook_pointer - search_address - 5;
-                *(uint32_t*)(search_address+1) = offset;
-            }
-            else
-            {
-                //check signed addition
-                chk = search_address + (int32_t)call_address + 5;
+			if (chk == (uint32_t)target_pointer)
+			{
+				if (IsAddressExcluded(base_address, search_address))
+				{
+					rootconsole->ConsolePrint("(unsigned) Skipped patch at [%X]", search_address);
+					search_address++;
+					continue;
+				}
 
-                if(chk == (uint32_t)target_pointer)
-                {
-                    if(IsAddressExcluded(base_address, search_address))
-                    {
-                        rootconsole->ConsolePrint("(signed) Skipped patch at [%X]", search_address);
-                        search_address++;
-                        continue;
-                    }
+				//rootconsole->ConsolePrint("(unsigned) Hooked address: [%X]", search_address - (uint32_t)base_address);
+				uint32_t offset = (uint32_t)hook_pointer - search_address - 5;
+				*(uint32_t*)(search_address + 1) = offset;
+			}
+			else
+			{
+				//check signed addition
+				chk = search_address + (int32_t)call_address + 5;
 
-                    rootconsole->ConsolePrint("(signed) Hooked address: [%X]", search_address - base_address);
-                    uint32_t offset = (uint32_t)hook_pointer - search_address - 5;
-                    *(uint32_t*)(search_address+1) = offset;
-                }
-            }
-        }
+				if (chk == (uint32_t)target_pointer)
+				{
+					if (IsAddressExcluded(base_address, search_address))
+					{
+						rootconsole->ConsolePrint("(signed) Skipped patch at [%X]", search_address);
+						search_address++;
+						continue;
+					}
 
-        search_address++;
-    }
+					rootconsole->ConsolePrint("(signed) Hooked address: [%X]", search_address - base_address);
+					uint32_t offset = (uint32_t)hook_pointer - search_address - 5;
+					*(uint32_t*)(search_address + 1) = offset;
+				}
+			}
+		}
+
+		search_address++;
+	}
 }
 
-Library* FindLibrary(char* lib_name, bool less_intense_search)
+bool IsMarkedForDeletion(uint32_t arg0)
 {
-    for(int i = 0; i < 512; i++)
-    {
-        if(loaded_libraries[i] == 0) continue;
-        Library* existing_lib = (Library*)loaded_libraries[i];
-        
-        if(less_intense_search)
-        {
-            if(strcasestr(existing_lib->library_signature, lib_name) != NULL) return existing_lib;
-        }
+	if (*(uint8_t*)(arg0 + offsets.ismarked_offset) & 1)
+		return false;
 
-        if(strcmp(existing_lib->library_signature, lib_name) == 0) return existing_lib;
-    }
-
-    return NULL;
-}
-
-void ClearLoadedLibraries()
-{
-    for(int i = 0; i < 512; i++)
-    {
-        if(loaded_libraries[i] != 0)
-        {
-            Library* delete_this = (Library*)loaded_libraries[i];
-
-            dlclose(delete_this->library_linkmap);
-            free(delete_this->library_signature);
-
-            free(delete_this);
-
-            loaded_libraries[i] = 0;
-        }
-    }
-}
-
-Library* LoadLibrary(char* library_full_path)
-{
-    if(library_full_path)
-    {
-        Library* found_lib = FindLibrary(library_full_path, false);
-        if(found_lib) return found_lib;
-
-        struct link_map* library_lm = (struct link_map*)(dlopen(library_full_path, RTLD_NOW));
-
-        if(library_lm)
-        {
-            for(int i = 0; i < 512; i++)
-            {
-                if(loaded_libraries[i] == 0)
-                {
-                    Library* new_lib = (Library*)(malloc(sizeof(Library)));
-                    new_lib->library_linkmap = (void*)library_lm;
-                    new_lib->library_signature = (char*)copy_val(library_full_path, strlen(library_full_path)+1);
-                    new_lib->library_base_address = library_lm->l_addr;
-                    new_lib->library_size = 0;
-                    loaded_libraries[i] = (uint32_t)new_lib;
-                    
-                    rootconsole->ConsolePrint("Loaded [%s]", library_full_path);
-                    return new_lib;
-                }
-            }
-
-            rootconsole->ConsolePrint("Failed to save library to list!");
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    return NULL;
-}
-
-Library* getlibrary(char* file_line)
-{
-    for(int i = 0; i < 512; i++)
-    {
-        if(our_libraries[i] == 0) continue;
-
-        char* match = strcasestr(file_line, (char*)our_libraries[i]);
-
-        if(match)
-        {
-            int temp_char_reverser = 0;
-            char* abs_path = NULL;
-
-            while(abs_path == NULL)
-            {
-                if(*(char*)(match-temp_char_reverser) == ' ')
-                {
-                    if(*(char*)(match-temp_char_reverser+1) == '/')
-                    {
-                        abs_path = match-temp_char_reverser+1;
-                    }
-                }
-
-                temp_char_reverser++;
-            }
-
-            /*char file_line_temp[512];
-            snprintf(file_line_temp, 512, "%s", file_line);
-            strtok(file_line_temp, " \t");
-            for(int i = 0; i < 4; i++) strtok(NULL, " \t");
-            char* abs_path = strtok(NULL, " \t");*/
-
-            //rootconsole->ConsolePrint("abs [%s]", abs_path);
-
-            Library* found_lib = LoadLibrary(abs_path);
-
-            if(found_lib)
-            {
-                //rootconsole->ConsolePrint("Detected our library [%s]", our_libraries[i]);
-                return found_lib;
-            }
-        }
-    }
-
-    return NULL;
-}
-
-void AllowWriteToMappedMemory()
-{
-    for(int i = 0; i < 512; i++)
-    {
-        memory_prots_save_list[i] = 0;
-    }
-
-    FILE* smaps_file = fopen("/proc/self/smaps", "r");    
-
-    if(!smaps_file)
-    {
-        rootconsole->ConsolePrint("Error opening smaps");
-        return;
-    }
-
-    char* file_line = (char*) malloc(sizeof(char) * 1024);
-
-    while(fgets(file_line, 1024, smaps_file))
-    {
-        sscanf(file_line, "%[^\n]s", file_line);
-
-        Library* currentLibrary = getlibrary(file_line);
-        if(!currentLibrary) continue;
-
-        char* file_line_cpy = (char*) malloc(strlen(file_line)+1);
-        snprintf(file_line_cpy, strlen(file_line)+1, "%s", file_line);
-
-        char* address_range = strtok(file_line_cpy, " \t");
-        char* protections = strtok(NULL, " \t");
-
-        char* start_address = strtok(address_range, "-");
-        char* end_address = strtok(NULL, "-");
-
-        uint32_t start_address_parsed = 0;
-        uint32_t end_address_parsed = 0;
-
-        if(start_address) start_address_parsed = strtoul(start_address, NULL, 16);
-        if(end_address) end_address_parsed = strtoul(end_address, NULL, 16);
-
-        int save_protections = PROT_NONE;
-
-        if(strstr(protections, "r") != 0)
-            save_protections = PROT_READ;
-        if(strstr(protections, "w") != 0)
-            save_protections = save_protections | PROT_WRITE;
-        if(strstr(protections, "x") != 0)
-            save_protections = save_protections | PROT_EXEC;
-
-        if(start_address_parsed && end_address_parsed)
-        {
-            int address_size = end_address_parsed - start_address_parsed;
-
-            for(int i = 0; i < 512 && i+1 < 512 && i+2 < 512; i = i+3)
-            {
-                if(memory_prots_save_list[i] == 0 && memory_prots_save_list[i+1] == 0 && memory_prots_save_list[i+2] == 0)
-                {
-                    memory_prots_save_list[i] = start_address_parsed;
-                    memory_prots_save_list[i+1] = end_address_parsed;
-                    memory_prots_save_list[i+2] = (uint32_t)save_protections;
-                    //rootconsole->ConsolePrint("Saved [%X] [%X] [%s]", end_address_parsed, start_address_parsed, currentLibrary->library_signature);
-                    break;
-                }
-            }
-
-            currentLibrary->library_size += address_size;
-        }
-
-        free(file_line_cpy);
-    }
-
-    free(file_line);
-    fclose(smaps_file);
-
-    ForceMemoryAccess();
-}
-
-void ForceMemoryAccess()
-{
-    for(int i = 0; i < 512 && i+1 < 512 && i+2 < 512; i = i+3)
-    {
-        if(memory_prots_save_list[i] == 0 && memory_prots_save_list[i+1] == 0 && memory_prots_save_list[i+2] == 0) continue;
-        
-        size_t pagesize = sysconf(_SC_PAGE_SIZE);
-        uint32_t pagestart = memory_prots_save_list[i] & -pagesize;
-
-        if(mprotect((void*)pagestart, memory_prots_save_list[i+1] - memory_prots_save_list[i], PROT_READ | PROT_WRITE | PROT_EXEC) == -1)
-        {
-            //rootconsole->ConsolePrint("Failed protection change: [%X] [%X]", memory_prots_save_list[i+1], memory_prots_save_list[i]);
-
-            //SELINUX shite
-
-            //perror("mprotect");
-            //exit(EXIT_FAILURE);
-        }
-        else
-        {
-            //rootconsole->ConsolePrint("Passed protection change: [%X] [%X]", memory_prots_save_list[i+1], memory_prots_save_list[i]);
-        }
-    }
-}
-
-void RestoreMemoryProtections()
-{
-    for(int i = 0; i < 512 && i+1 < 512 && i+2 < 512; i = i+3)
-    {
-        size_t pagesize = sysconf(_SC_PAGE_SIZE);
-        uint32_t pagestart = memory_prots_save_list[i] & -pagesize;
-
-        if(mprotect((void*)pagestart, memory_prots_save_list[i+1] - memory_prots_save_list[i], memory_prots_save_list[i+2]) == -1)
-        {
-            perror("mprotect");
-            exit(EXIT_FAILURE);
-        }
-
-        memory_prots_save_list[i] = 0;
-        memory_prots_save_list[i+1] = 0;
-        memory_prots_save_list[i+2] = 0;
-    }
+	return true;
 }
 
 void ZeroVector(uint32_t vector)
 {
-    *(float*)(vector) = 0;
-    *(float*)(vector+4) = 0;
-    *(float*)(vector+8) = 0;
+	*(float*)(vector) = 0;
+	*(float*)(vector + 4) = 0;
+	*(float*)(vector + 8) = 0;
 }
 
 bool IsVectorNaN(uint32_t base)
 {
-    float s0 = *(float*)(base);
-    float s1 = *(float*)(base+4);
-    float s2 = *(float*)(base+8);
+	float s0 = *(float*)(base);
+	float s1 = *(float*)(base + 4);
+	float s2 = *(float*)(base + 8);
 
-    if(s0 != s0 || s1 != s1 || s2 != s2)
-        return true;
+	if (s0 != s0 || s1 != s1 || s2 != s2)
+		return true;
 
-    return false;
+	return false;
 }
 
 bool IsEntityPositionReasonable(uint32_t v)
 {
-    float x = *(float*)(v);
-    float y = *(float*)(v+4);
-    float z = *(float*)(v+8);
+	float x = *(float*)(v);
+	float y = *(float*)(v + 4);
+	float z = *(float*)(v + 8);
 
-    float r = 16384.0f;
+	float r = 16384.0f;
 
-    return
-        x > -r && x < r &&
-        y > -r && y < r &&
-        z > -r && z < r;
+	return
+		x > -r && x < r &&
+		y > -r && y < r &&
+		z > -r && z < r;
 }
 
 void InsertEntityToCollisionsList(uint32_t ent)
 {
-    if(IsEntityValid(ent))
-    {
-        char* classname = (char*)(*(uint32_t*)(ent+offsets.classname_offset));
+	if (IsEntityValid(ent))
+	{
+		char* classname = (char*)(*(uint32_t*)(ent + offsets.classname_offset));
 
-        if(classname && strcmp(classname, "player") == 0)
-        {
-            player_collision_rules_changed = true;
-            return;
-        }
+		if (classname && strcmp(classname, "player") == 0)
+		{
+			player_collision_rules_changed = true;
+			return;
+		}
 
-        for(int i = 0; i < 512; i++)
-        {
-            if(collisions_entity_list[i] != 0)
-            {
-                uint32_t refHandle = *(uint32_t*)(ent+offsets.refhandle_offset);
+		for (int i = 0; i < 512; i++)
+		{
+			if (collisions_entity_list[i] != 0)
+			{
+				uint32_t refHandle = *(uint32_t*)(ent + offsets.refhandle_offset);
 
-                if(refHandle == collisions_entity_list[i])
-                    return;
-            }
-        }
+				if (refHandle == collisions_entity_list[i])
+					return;
+			}
+		}
 
-        for(int i = 0; i < 512; i++)
-        {
-            if(collisions_entity_list[i] == 0)
-            {
-                uint32_t refHandle = *(uint32_t*)(ent+offsets.refhandle_offset);
-                collisions_entity_list[i] = refHandle;
+		for (int i = 0; i < 512; i++)
+		{
+			if (collisions_entity_list[i] == 0)
+			{
+				uint32_t refHandle = *(uint32_t*)(ent + offsets.refhandle_offset);
+				collisions_entity_list[i] = refHandle;
 
-                break;
-            }
-        }
-    }
+				break;
+			}
+		}
+	}
 }
 
 void UpdateAllCollisions()
 {
-    for(int i = 0; i < 512; i++)
-    {
-        if(collisions_entity_list[i] != 0)
-        {
-            uint32_t object = functions.GetCBaseEntity(collisions_entity_list[i]);
+	for (int i = 0; i < 512; i++)
+	{
+		if (collisions_entity_list[i] != 0)
+		{
+			uint32_t object = functions.GetCBaseEntity(collisions_entity_list[i]);
 
-            if(IsEntityValid(object))
-            {
-                functions.CollisionRulesChanged(object);
-            }
+			if (IsEntityValid(object))
+			{
+				functions.CollisionRulesChanged(object);
+			}
 
-            collisions_entity_list[i] = 0;
-        }
-    }
+			collisions_entity_list[i] = 0;
+		}
+	}
 
-    uint32_t ent = 0;
+	uint32_t ent = 0;
 
-    while((ent = functions.FindEntityByClassname(fields.CGlobalEntityList, ent, (uint32_t)"*")) != 0)
-    {
-        if(IsEntityValid(ent))
-        {
-            uint32_t m_Network = *(uint32_t*)(ent+offsets.mnetwork_offset);
+	while ((ent = functions.FindEntityByClassname(fields.CGlobalEntityList, ent, (uint32_t)"*")) != 0)
+	{
+		if (IsEntityValid(ent))
+		{
+			uint32_t m_Network = *(uint32_t*)(ent + offsets.mnetwork_offset);
 
-            if(!m_Network)
-            {
-                functions.CollisionRulesChanged(ent);
-            }
-        }
-    }
-    
-    ent = 0;
+			if (!m_Network)
+			{
+				functions.CollisionRulesChanged(ent);
+			}
+		}
+	}
 
-    while((ent = functions.FindEntityByClassname(fields.CGlobalEntityList, ent, (uint32_t)"player")) != 0)
-    {
-        if(IsEntityValid(ent))
-        {
-            functions.CollisionRulesChanged(ent);
-        }
-    }
+	ent = 0;
 
-    RemoveBadEnts();
+	while ((ent = functions.FindEntityByClassname(fields.CGlobalEntityList, ent, (uint32_t)"player")) != 0)
+	{
+		if (IsEntityValid(ent))
+		{
+			functions.CollisionRulesChanged(ent);
+		}
+	}
+
+	RemoveBadEnts();
 }
 
 void FixPlayerCollisionGroup()
 {
-    uint32_t player = 0;
+	uint32_t player = 0;
 
-    while((player = functions.FindEntityByClassname(fields.CGlobalEntityList, player, (uint32_t)"player")) != 0)
-    {
-        if(IsEntityValid(player))
-        {
-            uint32_t collision_flags = *(uint32_t*)(player+offsets.m_CollisionGroup_offset);
+	while ((player = functions.FindEntityByClassname(fields.CGlobalEntityList, player, (uint32_t)"player")) != 0)
+	{
+		if (IsEntityValid(player))
+		{
+			uint32_t collision_flags = *(uint32_t*)(player + offsets.m_CollisionGroup_offset);
 
-            if(collision_flags & 4)
-            {
-                *(uint32_t*)(player+offsets.m_CollisionGroup_offset) -= 4;
-            }
+			if (collision_flags & 4)
+			{
+				*(uint32_t*)(player + offsets.m_CollisionGroup_offset) -= 4;
+			}
 
-            if(!(collision_flags & 2))
-            {
-                *(uint32_t*)(player+offsets.m_CollisionGroup_offset) += 2;
-            }
-        }
-    }
+			if (!(collision_flags & 2))
+			{
+				*(uint32_t*)(player + offsets.m_CollisionGroup_offset) += 2;
+			}
+		}
+	}
 }
 
 void DisablePlayerWorldSpawnCollision()
 {
-    uint32_t player = 0;
+	uint32_t player = 0;
 
-    while((player = functions.FindEntityByClassname(fields.CGlobalEntityList, player, (uint32_t)"player")) != 0)
-    {
-        uint32_t worldspawn = functions.FindEntityByClassname(fields.CGlobalEntityList, 0, (uint32_t)"worldspawn");
+	while ((player = functions.FindEntityByClassname(fields.CGlobalEntityList, player, (uint32_t)"player")) != 0)
+	{
+		uint32_t worldspawn = functions.FindEntityByClassname(fields.CGlobalEntityList, 0, (uint32_t)"worldspawn");
 
-        if(IsEntityValid(worldspawn) && IsEntityValid(player))
-        {
-            float player_velocity_x = *(uint32_t*)(player+offsets.abs_velocity_offset);
-            float player_velocity_y = *(uint32_t*)(player+offsets.abs_velocity_offset+4);
-            float player_velocity_z = *(uint32_t*)(player+offsets.abs_velocity_offset+8);
+		if (IsEntityValid(worldspawn) && IsEntityValid(player))
+		{
+			float player_velocity_x = *(uint32_t*)(player + offsets.abs_velocity_offset);
+			float player_velocity_y = *(uint32_t*)(player + offsets.abs_velocity_offset + 4);
+			float player_velocity_z = *(uint32_t*)(player + offsets.abs_velocity_offset + 8);
 
-            if(player_velocity_x > 3260000000.0 || player_velocity_y > 3260000000.0)
-            {
-                functions.DisableEntityCollisions(player, worldspawn);
-            }
-            else
-            {
-                functions.EnableEntityCollisions(player, worldspawn);
-            }
+			if (player_velocity_x > 3260000000.0 || player_velocity_y > 3260000000.0)
+			{
+				functions.DisableEntityCollisions(player, worldspawn);
+			}
+			else
+			{
+				functions.EnableEntityCollisions(player, worldspawn);
+			}
 
-            //rootconsole->ConsolePrint("%f %f %f", player_velocity_x, player_velocity_y, player_velocity_z);
+			//rootconsole->ConsolePrint("%f %f %f", player_velocity_x, player_velocity_y, player_velocity_z);
 
-            //if(!player_worldspawn_collision_disabled)
-            //{
-            //    functions.DisableEntityCollisions(player, worldspawn);
-            //}
-        }
-    }
+			//if(!player_worldspawn_collision_disabled)
+			//{
+			//    functions.DisableEntityCollisions(player, worldspawn);
+			//}
+		}
+	}
 
-    player_worldspawn_collision_disabled = true;
+	player_worldspawn_collision_disabled = true;
 }
 
 void DisablePlayerCollisions()
 {
-    uint32_t current_player = 0;
+	uint32_t current_player = 0;
 
-    while((current_player = functions.FindEntityByClassname(fields.CGlobalEntityList, current_player, (uint32_t)"player")) != 0)
-    {
-        if(IsEntityValid(current_player))
-        {
-            uint32_t other_players = 0;
+	while ((current_player = functions.FindEntityByClassname(fields.CGlobalEntityList, current_player, (uint32_t)"player")) != 0)
+	{
+		if (IsEntityValid(current_player))
+		{
+			uint32_t other_players = 0;
 
-            while((other_players = functions.FindEntityByClassname(fields.CGlobalEntityList, other_players, (uint32_t)"player")) != 0)
-            {
-                if(IsEntityValid(other_players) && other_players != current_player)
-                {
-                    //rootconsole->ConsolePrint("Disable player collisions!");
-                    functions.DisableEntityCollisions(current_player, other_players);
-                }
-            }
-        }
-    }
+			while ((other_players = functions.FindEntityByClassname(fields.CGlobalEntityList, other_players, (uint32_t)"player")) != 0)
+			{
+				if (IsEntityValid(other_players) && other_players != current_player)
+				{
+					//rootconsole->ConsolePrint("Disable player collisions!");
+					functions.DisableEntityCollisions(current_player, other_players);
+				}
+			}
+		}
+	}
 }
 
 void RemoveBadEnts()
 {
-    uint32_t ent = 0;
+	uint32_t ent = 0;
 
-    while((ent = functions.FindEntityByClassname(fields.CGlobalEntityList, ent, (uint32_t)"*")) != 0)
-    {
-        if(IsEntityValid(ent))
-        {
-            uint32_t abs_origin = ent+offsets.abs_origin_offset;
-            uint32_t origin = ent+offsets.origin_offset;
-            uint32_t abs_angles = ent+offsets.abs_angles_offset;
-            uint32_t abs_velocity = ent+offsets.abs_velocity_offset;
+	while ((ent = functions.FindEntityByClassname(fields.CGlobalEntityList, ent, (uint32_t)"*")) != 0)
+	{
+		if (IsEntityValid(ent))
+		{
+			uint32_t abs_origin = ent + offsets.abs_origin_offset;
+			uint32_t origin = ent + offsets.origin_offset;
+			uint32_t abs_angles = ent + offsets.abs_angles_offset;
+			uint32_t abs_velocity = ent + offsets.abs_velocity_offset;
 
-            if
-            (
-            
-            !IsEntityPositionReasonable(abs_origin)
-            || 
-            !IsEntityPositionReasonable(origin)
-            || 
-            !IsEntityPositionReasonable(abs_angles)
-            ||
-            !IsEntityPositionReasonable(abs_velocity)
-            
-            )
-            {
-                char* classname = (char*)(*(uint32_t*)(ent+offsets.classname_offset));
+			if
+				(
 
-                if(strcmp(classname, "player") == 0)
-                {
-                    ZeroVector(abs_origin);
-                    ZeroVector(origin);
-                    ZeroVector(abs_angles);
-                    ZeroVector(abs_velocity);
+					!IsEntityPositionReasonable(abs_origin)
+					||
+					!IsEntityPositionReasonable(origin)
+					||
+					!IsEntityPositionReasonable(abs_angles)
+					||
+					!IsEntityPositionReasonable(abs_velocity)
 
-                    continue;
-                }
+					)
+			{
+				char* classname = (char*)(*(uint32_t*)(ent + offsets.classname_offset));
 
-                rootconsole->ConsolePrint("Removed bad ent!");
-                functions.RemoveEntityNormal(ent, true);
-            }
-        }
-    }
+				if (strcmp(classname, "player") == 0)
+				{
+					ZeroVector(abs_origin);
+					ZeroVector(origin);
+					ZeroVector(abs_angles);
+					ZeroVector(abs_velocity);
+
+					continue;
+				}
+
+				rootconsole->ConsolePrint("Removed bad ent!");
+				functions.RemoveEntityNormal(ent, true);
+			}
+		}
+	}
 }
 
 uint32_t IsEntityValid(uint32_t entity)
 {
-    pOneArgProt pDynamicOneArgFunc;
-    if(entity == 0) return entity;
+	pOneArgProt pDynamicOneArgFunc;
+	if (entity == 0) return entity;
 
-    uint32_t object = functions.GetCBaseEntity(*(uint32_t*)(entity+offsets.refhandle_offset));
+	uint32_t object = functions.GetCBaseEntity(*(uint32_t*)(entity + offsets.refhandle_offset));
 
-    if(object)
-    {
-        uint32_t isMarked = functions.IsMarkedForDeletion(object+offsets.iserver_offset);
+	if (object)
+	{
+		uint32_t isMarked = IsMarkedForDeletion(object + offsets.iserver_offset);
 
-        if(isMarked)
-        {
-            return 0;
-        }
+		if (isMarked)
+		{
+			return 0;
+		}
 
-        return entity;
-    }
+		return entity;
+	}
 
-    return 0;
+	return 0;
 }
 
 ValueList AllocateValuesList()
 {
-    ValueList list = (ValueList) malloc(sizeof(ValueList));
-    *list = NULL;
-    return list;
+	ValueList list = (ValueList)malloc(sizeof(ValueList));
+	*list = NULL;
+	return list;
 }
 
 Value* CreateNewValue(void* valueInput)
 {
-    Value* val = (Value*) malloc(sizeof(Value));
+	Value* val = (Value*)malloc(sizeof(Value));
 
-    val->value = valueInput;
-    val->nextVal = NULL;
-    return val;
+	val->value = valueInput;
+	val->nextVal = NULL;
+	return val;
 }
 
-int DeleteAllValuesInList(ValueList list, bool free_val, pthread_mutex_t* lockInput)
+int DeleteAllValuesInList(ValueList list, bool free_val, CRITICAL_SECTION* lockInput)
 {
-    if(lockInput)
-    {
-        while(pthread_mutex_trylock(lockInput) != 0);
-    }
+	if (lockInput)
+	{
+		while (TryEnterCriticalSection(lockInput) == FALSE);
+	}
 
-    int removed_items = 0;
+	int removed_items = 0;
 
-    if(!list || !*list)
-    {
-        
-        if(lockInput)
-        {
-            pthread_mutex_unlock(lockInput);
-        }
+	if (!list || !*list)
+	{
 
-        return removed_items;
-    }
-    
-    Value* aValue = *list;
+		if (lockInput)
+		{
+			LeaveCriticalSection(lockInput);
+		}
 
-    while(aValue)
-    {
-        Value* detachedValue = aValue->nextVal;
-        if(free_val) free(aValue->value);
-        free(aValue);
-        aValue = detachedValue;
+		return removed_items;
+	}
 
-        removed_items++;
-    }
+	Value* aValue = *list;
 
-    *list = NULL;
+	while (aValue)
+	{
+		Value* detachedValue = aValue->nextVal;
+		if (free_val) free(aValue->value);
+		free(aValue);
+		aValue = detachedValue;
 
-    if(lockInput)
-    {
-        pthread_mutex_unlock(lockInput);
-    }
+		removed_items++;
+	}
 
-    return removed_items;
+	*list = NULL;
+
+	if (lockInput)
+	{
+		LeaveCriticalSection(lockInput);
+	}
+
+	return removed_items;
 }
 
-bool IsInValuesList(ValueList list, void* searchVal, pthread_mutex_t* lockInput)
+bool IsInValuesList(ValueList list, void* searchVal, CRITICAL_SECTION* lockInput)
 {
-    if(lockInput)
-    {
-        while(pthread_mutex_trylock(lockInput) != 0);
-    }
+	if (lockInput)
+	{
+		while (TryEnterCriticalSection(lockInput) == FALSE);
+	}
 
-    Value* aValue = *list;
+	Value* aValue = *list;
 
-    while(aValue)
-    {
-        if((uint32_t)aValue->value == (uint32_t)searchVal)
-        {
-            if(lockInput)
-            {
-                pthread_mutex_unlock(lockInput);
-            }
+	while (aValue)
+	{
+		if ((uint32_t)aValue->value == (uint32_t)searchVal)
+		{
+			if (lockInput)
+			{
+				LeaveCriticalSection(lockInput);
+			}
 
-            return true;
-        }
-        
-        aValue = aValue->nextVal;
-    }
+			return true;
+		}
 
-    if(lockInput)
-    {
-        pthread_mutex_unlock(lockInput);
-    }
+		aValue = aValue->nextVal;
+	}
 
-    return false;
+	if (lockInput)
+	{
+		LeaveCriticalSection(lockInput);
+	}
+
+	return false;
 }
 
-bool RemoveFromValuesList(ValueList list, void* searchVal, pthread_mutex_t* lockInput)
+bool RemoveFromValuesList(ValueList list, void* searchVal, CRITICAL_SECTION* lockInput)
 {
-    if(lockInput)
-    {
-        while(pthread_mutex_trylock(lockInput) != 0);
-    }
+	if (lockInput)
+	{
+		while (TryEnterCriticalSection(lockInput) == FALSE);
+	}
 
-    Value* aValue = *list;
+	Value* aValue = *list;
 
-    if(aValue == NULL)
-    {
-        if(lockInput)
-        {
-            pthread_mutex_unlock(lockInput);
-        }
+	if (aValue == NULL)
+	{
+		if (lockInput)
+		{
+			LeaveCriticalSection(lockInput);
+		}
 
-        return false;
-    }
+		return false;
+	}
 
-    //search at the start of the list
-    if(((uint32_t)aValue->value) == ((uint32_t)searchVal))
-    {
-        Value* detachedValue = aValue->nextVal;
-        free(*list);
-        *list = detachedValue;
+	//search at the start of the list
+	if (((uint32_t)aValue->value) == ((uint32_t)searchVal))
+	{
+		Value* detachedValue = aValue->nextVal;
+		free(*list);
+		*list = detachedValue;
 
-        if(lockInput)
-        {
-            pthread_mutex_unlock(lockInput);
-        }
+		if (lockInput)
+		{
+			LeaveCriticalSection(lockInput);
+		}
 
-        return true;
-    }
+		return true;
+	}
 
-    //search the rest of the list
-    while(aValue->nextVal)
-    {
-        if(((uint32_t)aValue->nextVal->value) == ((uint32_t)searchVal))
-        {
-            Value* detachedValue = aValue->nextVal->nextVal;
+	//search the rest of the list
+	while (aValue->nextVal)
+	{
+		if (((uint32_t)aValue->nextVal->value) == ((uint32_t)searchVal))
+		{
+			Value* detachedValue = aValue->nextVal->nextVal;
 
-            free(aValue->nextVal);
-            aValue->nextVal = detachedValue;
+			free(aValue->nextVal);
+			aValue->nextVal = detachedValue;
 
-            if(lockInput)
-            {
-                pthread_mutex_unlock(lockInput);
-            }
+			if (lockInput)
+			{
+				LeaveCriticalSection(lockInput);
+			}
 
-            return true;
-        }
+			return true;
+		}
 
-        aValue = aValue->nextVal;
-    }
+		aValue = aValue->nextVal;
+	}
 
-    if(lockInput)
-    {
-        pthread_mutex_unlock(lockInput);
-    }
+	if (lockInput)
+	{
+		LeaveCriticalSection(lockInput);
+	}
 
-    return false;
+	return false;
 }
 
-int ValueListItems(ValueList list, pthread_mutex_t* lockInput)
+int ValueListItems(ValueList list, CRITICAL_SECTION* lockInput)
 {
-    if(lockInput)
-    {
-        while(pthread_mutex_trylock(lockInput) != 0);
-    }
+	if (lockInput)
+	{
+		while (TryEnterCriticalSection(lockInput) == FALSE);
+	}
 
-    Value* aValue = *list;
-    int counter = 0;
+	Value* aValue = *list;
+	int counter = 0;
 
-    while(aValue)
-    {
-        counter++;
-        aValue = aValue->nextVal;
-    }
+	while (aValue)
+	{
+		counter++;
+		aValue = aValue->nextVal;
+	}
 
-    if(lockInput)
-    {
-        pthread_mutex_unlock(lockInput);
-    }
+	if (lockInput)
+	{
+		LeaveCriticalSection(lockInput);
+	}
 
-    return counter;
+	return counter;
 }
 
-bool InsertToValuesList(ValueList list, Value* head, pthread_mutex_t* lockInput, bool tail, bool duplicate_chk)
+bool InsertToValuesList(ValueList list, Value* head, CRITICAL_SECTION* lockInput, bool tail, bool duplicate_chk)
 {
-    if(lockInput)
-    {
-        while(pthread_mutex_trylock(lockInput) != 0);
-    }
+	if (lockInput)
+	{
+		while (TryEnterCriticalSection(lockInput) == FALSE);
+	}
 
-    if(duplicate_chk)
-    {
-        Value* aValue = *list;
+	if (duplicate_chk)
+	{
+		Value* aValue = *list;
 
-        while(aValue)
-        {
-            if((uint32_t)aValue->value == (uint32_t)head->value)
-            {
-                if(lockInput)
-                {
-                    pthread_mutex_unlock(lockInput);
-                }
+		while (aValue)
+		{
+			if ((uint32_t)aValue->value == (uint32_t)head->value)
+			{
+				if (lockInput)
+				{
+					LeaveCriticalSection(lockInput);
+				}
 
-                return false;
-            }
-        
-            aValue = aValue->nextVal;
-        }
-    }
+				return false;
+			}
 
-    if(tail)
-    {
-        Value* aValue = *list;
+			aValue = aValue->nextVal;
+		}
+	}
 
-        while(aValue)
-        {
-            if(aValue->nextVal == NULL)
-            {
-                aValue->nextVal = head;
+	if (tail)
+	{
+		Value* aValue = *list;
 
-                if(lockInput)
-                {
-                    pthread_mutex_unlock(lockInput);
-                }
+		while (aValue)
+		{
+			if (aValue->nextVal == NULL)
+			{
+				aValue->nextVal = head;
 
-                return true;
-            }
+				if (lockInput)
+				{
+					LeaveCriticalSection(lockInput);
+				}
 
-            aValue = aValue->nextVal;
-        }
-    }
+				return true;
+			}
 
-    head->nextVal = *list;
-    *list = head;
+			aValue = aValue->nextVal;
+		}
+	}
 
-    if(lockInput)
-    {
-        pthread_mutex_unlock(lockInput);
-    }
+	head->nextVal = *list;
+	*list = head;
 
-    return true;
-}
+	if (lockInput)
+	{
+		LeaveCriticalSection(lockInput);
+	}
 
-EntityKV* CreateNewEntityKV(uint32_t refHandle, uint32_t keyIn, uint32_t valueIn)
-{
-    EntityKV* kv = (EntityKV*) malloc(sizeof(EntityKV));
-
-    kv->entityRef = refHandle;
-    kv->key = keyIn;
-    kv->value = valueIn;
-
-    return kv;
+	return true;
 }

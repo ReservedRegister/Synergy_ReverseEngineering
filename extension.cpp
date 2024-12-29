@@ -1,7 +1,7 @@
 #include "extension.h"
 
-extern void InitExtensionBlackMesa();
-extern void InitExtensionSynergy();
+extern bool InitExtensionBlackMesa();
+extern bool InitExtensionSynergy();
 
 extern void InitUtil();
 
@@ -10,8 +10,8 @@ SMEXT_LINK(&g_SynUtils);
 
 void SynergyUtils::SDK_OnAllLoaded()
 {
-    InitUtil();
-    
-    InitExtensionBlackMesa();
-    InitExtensionSynergy();
+	InitUtil();
+
+	InitExtensionBlackMesa();
+	InitExtensionSynergy();
 }

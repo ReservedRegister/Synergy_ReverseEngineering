@@ -5,10 +5,10 @@
 
 void ApplyPatchesSpecificSynergy()
 {
-    uint32_t offset = 0;
+	uint32_t offset = 0;
 }
 
 void HookFunctionsSpecificSynergy()
 {
-    
+
 }
