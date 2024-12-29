@@ -10,6 +10,7 @@ bool InitCoreSynergy()
 	disable_internal_remove_incrementor = false;
 
 	bool loaded = true;
+	int module_counter = 0;
 
 	HMODULE server_module = GetModuleHandle("server.dll");
 	HMODULE engine_module = GetModuleHandle("engine.dll");
@@ -22,7 +23,8 @@ bool InitCoreSynergy()
 		server_memory->dll_load_base = 0x10000000;
 		server_memory->dll_rva = 0xC00;
 
-		modules[0] = server_memory;
+		modules[module_counter] = server_memory;
+		module_counter++;
 	}
 	else
 		loaded = false;
@@ -32,7 +34,8 @@ bool InitCoreSynergy()
 		engine_memory->dll_load_base = 0x10000000;
 		engine_memory->dll_rva = 0xC00;
 
-		modules[1] = engine_memory;
+		modules[module_counter] = engine_memory;
+		module_counter++;
 	}
 	else
 		loaded = false;
