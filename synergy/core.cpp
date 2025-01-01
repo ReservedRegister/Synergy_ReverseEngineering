@@ -53,7 +53,7 @@ bool IsAllowedToPatchSdkTools(uint32_t lib_base, uint32_t lib_size)
 void PopulateHookExclusionListsSynergy()
 {
     hook_exclude_list_base[0] = server_srv;
-    hook_exclude_list_offset[0] = 0x008A0D6F;
+    hook_exclude_list_offset[0] = 0x008A0D7F;
 }
 
 uint32_t GetCBaseEntitySynergy(uint32_t EHandle)

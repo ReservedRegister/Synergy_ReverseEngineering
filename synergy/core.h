@@ -9,7 +9,6 @@ extern ValueList leakedResourcesEdtSystem;
 
 extern bool sdktools_passed;
 extern bool savegame;
-extern bool disable_internal_remove_incrementor;
 
 bool IsAllowedToPatchSdkTools(uint32_t lib_base, uint32_t lib_size);
 uint32_t GetCBaseEntitySynergy(uint32_t EHandle);

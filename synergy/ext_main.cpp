@@ -67,9 +67,9 @@ bool InitExtensionSynergy()
     RestoreLinkedLists();
     SaveProcessId();
 
-    fields.CGlobalEntityList = server_srv + 0x00EAB59C;
-    fields.sv = engine_srv + 0x00391FA8;
-    fields.RemoveImmediateSemaphore = server_srv + 0x00F3BC90;
+    fields.CGlobalEntityList = server_srv + 0x00EAB5BC;
+    fields.sv = engine_srv + 0x00394538;
+    fields.RemoveImmediateSemaphore = server_srv + 0x00F3BCB0;
 
     offsets.classname_offset = 0x74;
     offsets.abs_origin_offset = 0x2A4;
@@ -85,11 +85,11 @@ bool InitExtensionSynergy()
     offsets.m_CollisionGroup_offset = 516;
 
     functions.GetCBaseEntity = (pOneArgProt)(GetCBaseEntitySynergy);
-    functions.RemoveNormal = (pOneArgProt)(server_srv + 0x008A0BC0);
-    functions.RemoveInsta = (pOneArgProt)(server_srv + 0x008A0DE0);
+    functions.RemoveNormal = (pOneArgProt)(server_srv + 0x008A0BD0);
+    functions.RemoveInsta = (pOneArgProt)(server_srv + 0x008A0DF0);
     functions.SetSolidFlags = (pTwoArgProt)(server_srv + 0x00615830);
-    functions.DisableEntityCollisions = (pTwoArgProt)(server_srv + 0x0077C2C0);
-    functions.EnableEntityCollisions = (pTwoArgProt)(server_srv + 0x0077C420);
+    functions.DisableEntityCollisions = (pTwoArgProt)(server_srv + 0x0077C2A0);
+    functions.EnableEntityCollisions = (pTwoArgProt)(server_srv + 0x0077C400);
     functions.CollisionRulesChanged = (pOneArgProt)(server_srv + 0x005D0240);
     functions.FindEntityByClassname = (pThreeArgProt)(server_srv + 0x0064B210);
     functions.CleanupDeleteList = (pOneArgProt)(server_srv + 0x0064AC50);
@@ -138,33 +138,27 @@ void ApplyPatchesSynergy()
         memset((void*)(sdktools + 0x00016907), 0x90, 2);
     }
 
-    uint32_t hook_game_frame = server_srv + 0x006B1E84;
+    uint32_t hook_game_frame = server_srv + 0x006B1E64;
     offset = (uint32_t)HooksSynergy::SimulateEntitiesHook - hook_game_frame - 5;
     *(uint32_t*)(hook_game_frame+1) = offset;
 
-    uint32_t hook_reverse_order = server_srv + 0x006B1E90;
+    uint32_t hook_reverse_order = server_srv + 0x006B1E70;
     offset = (uint32_t)HooksSynergy::EmptyCall - hook_reverse_order - 5;
     *(uint32_t*)(hook_reverse_order+1) = offset;
 
-    uint32_t hook_post_systems = server_srv + 0x006B1E9C;
+    uint32_t hook_post_systems = server_srv + 0x006B1E7C;
     offset = (uint32_t)HooksSynergy::EmptyCall - hook_post_systems - 5;
     *(uint32_t*)(hook_post_systems+1) = offset;
 
-    uint32_t hook_service_event_queue = server_srv + 0x006B1EAA;
+    uint32_t hook_service_event_queue = server_srv + 0x006B1E8A;
     offset = (uint32_t)HooksSynergy::EmptyCall - hook_service_event_queue - 5;
     *(uint32_t*)(hook_service_event_queue+1) = offset;
 
-    uint32_t patch_player_restore = server_srv + 0x00BDD0BC;
+    uint32_t patch_player_restore = server_srv + 0x00BDD0CC;
     memset((void*)patch_player_restore, 0x90, 0x26);
 
-    uint32_t patch_showtriggers_toggle_cmd = server_srv + 0x008815D5;
-    memset((void*)patch_showtriggers_toggle_cmd, 0x90, 6);
-    offset = (uint32_t)HooksSynergy::ShowtriggersToggle - patch_showtriggers_toggle_cmd - 5;
-    *(uint8_t*)(patch_showtriggers_toggle_cmd) = 0xE8;
-    *(uint32_t*)(patch_showtriggers_toggle_cmd+1) = offset;
-
     //CMessageEntity
-    uint32_t remove_extra_call = server_srv + 0x0070717B;
+    uint32_t remove_extra_call = server_srv + 0x0070715B;
     offset = (uint32_t)HooksSynergy::EmptyCall - remove_extra_call - 5;
     *(uint32_t*)(remove_extra_call+1) = offset;
 }
@@ -379,7 +373,7 @@ uint32_t HooksSynergy::PhysSimEnt(uint32_t arg0)
         return 0;
     }
 
-    pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x0074E3F0);
+    pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x0074E3D0);
     return pDynamicOneArgFunc(arg0);
 }
 
@@ -387,7 +381,7 @@ uint32_t HooksSynergy::CreateEntityByNameHook(uint32_t arg0, uint32_t arg1)
 {
     pTwoArgProt pDynamicTwoArgFunc;
 
-    pDynamicTwoArgFunc = (pTwoArgProt)(server_srv + 0x00700600);
+    pDynamicTwoArgFunc = (pTwoArgProt)(server_srv + 0x007005E0);
     return pDynamicTwoArgFunc(arg0, arg1);
 }
 
@@ -401,7 +395,6 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
 {
     isTicking = true;
 
-    pZeroArgProt pDynamicZeroArgFunc;
     pOneArgProt pDynamicOneArgFunc;
 
     pOneArgProtFastCall pDynamicFastCallOneArgFunc;
@@ -439,8 +432,23 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
 
     functions.CleanupDeleteList(0);
 
+    if(savegame)
+    {
+        rootconsole->ConsolePrint("Saving game!");
+
+        functions.CleanupDeleteList(0);
+
+        //Autosave_Silent
+        pDynamicFastCallOneArgFunc = (pOneArgProtFastCall)(server_srv + 0x00BEC530);
+        pDynamicFastCallOneArgFunc(0);
+
+        functions.CleanupDeleteList(0);
+
+        savegame = false;
+    }
+
     //SimulateEntities
-    pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x0074E6C0);
+    pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x0074E6A0);
     pDynamicOneArgFunc(simulating);
 
     functions.CleanupDeleteList(0);
@@ -454,7 +462,7 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     functions.CleanupDeleteList(0);
 
     //ReverseOrder
-    pDynamicFastCallTwoArgFunc = (pTwoArgProtFastCall)(server_srv + 0x006E60A0);
+    pDynamicFastCallTwoArgFunc = (pTwoArgProtFastCall)(server_srv + 0x006E6080);
     pDynamicFastCallTwoArgFunc(0x2D, 0);
 
     functions.CleanupDeleteList(0);
@@ -464,7 +472,7 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     functions.CleanupDeleteList(0);
 
     //PostSystems
-    pDynamicFastCallTwoArgFunc = (pTwoArgProtFastCall)(server_srv + 0x006E6370);
+    pDynamicFastCallTwoArgFunc = (pTwoArgProtFastCall)(server_srv + 0x006E6350);
     pDynamicFastCallTwoArgFunc(0x41, 0);
 
     functions.CleanupDeleteList(0);
@@ -475,24 +483,9 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
 
     //ServiceEvents
     pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x00607AA0);
-    pDynamicOneArgFunc(server_srv + 0x00EA2550);
+    pDynamicOneArgFunc(server_srv + 0x00EA2570);
 
     functions.CleanupDeleteList(0);
-
-    if(savegame)
-    {
-        rootconsole->ConsolePrint("Saving game!");
-
-        functions.CleanupDeleteList(0);
-
-        //Autosave_Silent
-        pDynamicFastCallOneArgFunc = (pOneArgProtFastCall)(server_srv + 0x00BEC520);
-        pDynamicFastCallOneArgFunc(0);
-
-        functions.CleanupDeleteList(0);
-
-        savegame = false;
-    }
     
     return 0;
 }
@@ -591,33 +584,19 @@ uint32_t HooksSynergy::UTIL_RemoveBaseHook(uint32_t arg0)
     return 0;
 }
 
-uint32_t HooksSynergy::ShowtriggersToggle()
-{
-    uint32_t sv_cheats = *(uint32_t*)(server_srv + 0x00EA2B24);
-    uint32_t something_one = *(uint32_t*)(sv_cheats+0x1C);
-    uint32_t sv_cheats_value = *(uint32_t*)(something_one+0x30);
-
-    if(sv_cheats_value == 1)
-    {
-        rootconsole->ConsolePrint("Toggling showtriggers_toggle");
-        return *(uint32_t*)(server_srv + 0x00EBB5A0);
-    }
-
-    return 0;
-}
-
 void HookFunctionsSynergy()
 {
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00700600), (void*)HooksSynergy::CreateEntityByNameHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x008A0AB0), (void*)HooksSynergy::UTIL_RemoveHookFailsafe);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x008A0BC0), (void*)HooksSynergy::UTIL_RemoveBaseHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x008A0DE0), (void*)HooksSynergy::HookInstaKill);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x0074E3F0), (void*)HooksSynergy::PhysSimEnt);
-    HookFunction(dedicated_srv, dedicated_srv_size, (void*)(dedicated_srv + 0x000C4B70), (void*)HooksSynergy::PackedStoreDestructorHook);
+    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x007005E0), (void*)HooksSynergy::CreateEntityByNameHook);
+    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x008A0AC0), (void*)HooksSynergy::UTIL_RemoveHookFailsafe);
+    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x008A0BD0), (void*)HooksSynergy::UTIL_RemoveBaseHook);
+    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x008A0DF0), (void*)HooksSynergy::HookInstaKill);
+    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x0074E3D0), (void*)HooksSynergy::PhysSimEnt);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x005B4850), (void*)HooksSynergy::AcceptInputHook);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x005AF050), (void*)HooksSynergy::UpdateOnRemove);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x005D01E0), (void*)HooksSynergy::VPhysicsSetObjectHook);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x005D0240), (void*)HooksSynergy::CollisionRulesChangedHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00BEC520), (void*)HooksSynergy::AutosaveHook);
+    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00BEC530), (void*)HooksSynergy::AutosaveHook);
+
+    HookFunction(dedicated_srv, dedicated_srv_size, (void*)(dedicated_srv + 0x000C4B70), (void*)HooksSynergy::PackedStoreDestructorHook);
     HookFunction(dedicated_srv, dedicated_srv_size, (void*)(dedicated_srv + 0x000C7EB0), (void*)HooksSynergy::CanSatisfyVpkCacheInternalHook);
 }
