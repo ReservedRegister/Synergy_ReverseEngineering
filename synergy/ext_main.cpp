@@ -332,27 +332,10 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     {
         server_sleeping = false;
     }
-
-    functions.CleanupDeleteList(0);
     
     RemoveBadEnts();
 
     functions.CleanupDeleteList(0);
-
-    if(savegame)
-    {
-        rootconsole->ConsolePrint("Saving game!");
-
-        functions.CleanupDeleteList(0);
-
-        //Autosave_Silent
-        pDynamicFastCallOneArgFunc = (pOneArgProtFastCall)(server_srv + 0x00BEC530);
-        pDynamicFastCallOneArgFunc(0);
-
-        functions.CleanupDeleteList(0);
-
-        savegame = false;
-    }
 
     //SimulateEntities
     pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x0074E6A0);
@@ -361,9 +344,6 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     functions.CleanupDeleteList(0);
     
     RemoveBadEnts();
-
-    functions.CleanupDeleteList(0);
-
     UpdateAllCollisions();
 
     functions.CleanupDeleteList(0);
@@ -393,6 +373,25 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     pDynamicOneArgFunc(server_srv + 0x00EA2570);
 
     functions.CleanupDeleteList(0);
+    
+    RemoveBadEnts();
+
+    if(savegame)
+    {
+        rootconsole->ConsolePrint("Saving game!");
+
+        functions.CleanupDeleteList(0);
+
+        //Autosave_Silent
+        pDynamicFastCallOneArgFunc = (pOneArgProtFastCall)(server_srv + 0x00BEC530);
+        pDynamicFastCallOneArgFunc(0);
+
+        functions.CleanupDeleteList(0);
+
+        savegame = false;
+    }
+    
+    RemoveBadEnts();
     
     return 0;
 }

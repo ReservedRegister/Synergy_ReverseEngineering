@@ -742,6 +742,8 @@ void InsertEntityToCollisionsList(uint32_t ent)
 
 void UpdateAllCollisions()
 {
+    functions.CleanupDeleteList(0);
+    
     for(int i = 0; i < 512; i++)
     {
         if(collisions_entity_list[i] != 0)
@@ -867,6 +869,8 @@ void DisablePlayerCollisions()
 
 void RemoveBadEnts()
 {
+    functions.CleanupDeleteList(0);
+
     uint32_t ent = 0;
 
     while((ent = functions.FindEntityByClassname(fields.CGlobalEntityList, ent, (uint32_t)"*")) != 0)
@@ -892,22 +896,18 @@ void RemoveBadEnts()
             )
             {
                 char* classname = (char*)(*(uint32_t*)(ent+offsets.classname_offset));
-
-                if(strcmp(classname, "player") == 0)
-                {
-                    ZeroVector(abs_origin);
-                    ZeroVector(origin);
-                    ZeroVector(abs_angles);
-                    ZeroVector(abs_velocity);
-
-                    continue;
-                }
-
-                rootconsole->ConsolePrint("Removed bad ent!");
+                
+                if(classname)
+                    rootconsole->ConsolePrint("Removed bad ent! [%s]", classname);
+                else
+                    rootconsole->ConsolePrint("Removed bad ent!");
+                
                 RemoveEntityNormal(ent, true);
             }
         }
     }
+
+    functions.CleanupDeleteList(0);
 }
 
 void RemoveEntityNormal(uint32_t entity_object, bool validate)
