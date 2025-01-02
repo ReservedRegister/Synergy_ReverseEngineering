@@ -85,16 +85,28 @@ bool InitExtensionSynergy()
     offsets.m_CollisionGroup_offset = 516;
 
     functions.GetCBaseEntity = (pOneArgProt)(GetCBaseEntitySynergy);
+    functions.SpawnPlayer = (pOneArgProt)(server_srv + 0x00C2F140);
+    functions.RemoveNormalDirect = (pOneArgProt)(server_srv + 0x008A0AC0);
     functions.RemoveNormal = (pOneArgProt)(server_srv + 0x008A0BD0);
     functions.RemoveInsta = (pOneArgProt)(server_srv + 0x008A0DF0);
+    functions.CreateEntityByName = (pTwoArgProt)(server_srv + 0x007005E0);
+    functions.PhysSimEnt = (pOneArgProt)(server_srv + 0x0074E3D0);
+    functions.AcceptInput = (pSixArgProt)(server_srv + 0x005B4850);
+    functions.UpdateOnRemoveBase = (pOneArgProt)(server_srv + 0x005AF050);
+    functions.VphysicsSetObject = (pOneArgProt)(server_srv + 0x005D01E0);
+    functions.ClearAllEntities = (pOneArgProt)(server_srv + 0x0064AEE0);
     functions.SetSolidFlags = (pTwoArgProt)(server_srv + 0x00615830);
     functions.DisableEntityCollisions = (pTwoArgProt)(server_srv + 0x0077C2A0);
     functions.EnableEntityCollisions = (pTwoArgProt)(server_srv + 0x0077C400);
     functions.CollisionRulesChanged = (pOneArgProt)(server_srv + 0x005D0240);
     functions.FindEntityByClassname = (pThreeArgProt)(server_srv + 0x0064B210);
     functions.CleanupDeleteList = (pOneArgProt)(server_srv + 0x0064AC50);
+    functions.PackedStoreDestructor = (pOneArgProt)(dedicated_srv + 0x000C4B70);
+    functions.CanSatisfyVpkCacheInternal = (pSevenArgProt)(dedicated_srv + 0x000C7EB0);
 
     PopulateHookExclusionListsSynergy();
+
+    InitUtil();
 
     ApplyPatchesSynergy();
     ApplyPatchesSpecificSynergy();
@@ -143,39 +155,39 @@ void ApplyPatchesSynergy()
     *(uint32_t*)(hook_game_frame+1) = offset;
 
     uint32_t hook_reverse_order = server_srv + 0x006B1E70;
-    offset = (uint32_t)HooksSynergy::EmptyCall - hook_reverse_order - 5;
+    offset = (uint32_t)HooksUtil::EmptyCall - hook_reverse_order - 5;
     *(uint32_t*)(hook_reverse_order+1) = offset;
 
     uint32_t hook_post_systems = server_srv + 0x006B1E7C;
-    offset = (uint32_t)HooksSynergy::EmptyCall - hook_post_systems - 5;
+    offset = (uint32_t)HooksUtil::EmptyCall - hook_post_systems - 5;
     *(uint32_t*)(hook_post_systems+1) = offset;
 
     uint32_t hook_service_event_queue = server_srv + 0x006B1E8A;
-    offset = (uint32_t)HooksSynergy::EmptyCall - hook_service_event_queue - 5;
+    offset = (uint32_t)HooksUtil::EmptyCall - hook_service_event_queue - 5;
     *(uint32_t*)(hook_service_event_queue+1) = offset;
 
     uint32_t patch_player_restore = server_srv + 0x00BDD0CC;
     memset((void*)patch_player_restore, 0x90, 0x26);
 
+    uint32_t patch_nearplayer_jmp_one = server_srv + 0x00C2AB61;
+    *(uint8_t*)(patch_nearplayer_jmp_one) = 0xE9;
+    *(uint32_t*)(patch_nearplayer_jmp_one+1) = 0x10D;
+
+    uint32_t patch_nearplayer_jmp_two = server_srv + 0x00C2AC78;
+    memset((void*)patch_nearplayer_jmp_two, 0x90, 2);
+
+    uint32_t patch_nearplayer_jmp_three = server_srv + 0x00C2ACEF;
+    *(uint8_t*)(patch_nearplayer_jmp_three) = 0xE9;
+    *(uint32_t*)(patch_nearplayer_jmp_three+1) = 0xAC;
+
+    uint32_t patch_nearplayer_jmp_four = server_srv + 0x00C2ADAD;
+    *(uint8_t*)(patch_nearplayer_jmp_four) = 0xE9;
+    *(uint32_t*)(patch_nearplayer_jmp_four+1) = 0x81;
+
     //CMessageEntity
     uint32_t remove_extra_call = server_srv + 0x0070715B;
-    offset = (uint32_t)HooksSynergy::EmptyCall - remove_extra_call - 5;
+    offset = (uint32_t)HooksUtil::EmptyCall - remove_extra_call - 5;
     *(uint32_t*)(remove_extra_call+1) = offset;
-}
-
-uint32_t HooksSynergy::EmptyCall()
-{
-    return 0;
-}
-
-uint32_t HooksSynergy::UTIL_RemoveHookFailsafe(uint32_t arg0)
-{
-    // THIS IS UTIL_Remove(IServerNetworable*)
-    // THIS HOOK IS FOR UNUSUAL CALLS TO UTIL_Remove probably from sourcemod!
-
-    if(arg0 == 0) return 0;
-    RemoveEntityNormal(arg0-offsets.iserver_offset, true);
-    return 0;
 }
 
 uint32_t HooksSynergy::CallocHook(uint32_t nitems, uint32_t size)
@@ -219,21 +231,6 @@ uint32_t HooksSynergy::ReallocHook(uint32_t old_ptr, uint32_t new_size)
     if(new_size <= 0) return (uint32_t)realloc((void*)old_ptr, new_size);
 
     return (uint32_t)realloc((void*)old_ptr, new_size*1.2);
-}
-
-uint32_t HooksSynergy::UpdateOnRemove(uint32_t arg0)
-{
-    pOneArgProt pDynamicOneArgFunc;
-
-    char* classname = (char*)(*(uint32_t*)(arg0+offsets.classname_offset));
-
-    if(*(uint32_t*)(fields.RemoveImmediateSemaphore) != 0)
-        normal_delete_counter++;
-
-    //rootconsole->ConsolePrint("normal counter: [%d] [%d] [%s]", normal_delete_counter, hooked_delete_counter, classname);
-
-    pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x005AF050);
-    return pDynamicOneArgFunc(arg0);
 }
 
 uint32_t HooksSynergy::DirectMallocHookDedicatedSrv(uint32_t arg0)
@@ -299,96 +296,6 @@ uint32_t HooksSynergy::DirectMallocHookDedicatedSrv(uint32_t arg0)
     }
 
     return vpk_buffer;
-}
-
-uint32_t HooksSynergy::PackedStoreDestructorHook(uint32_t arg0)
-{
-    //Remove ref to store only valid objects!
-    pOneArgProt pDynamicOneArgFunc;
-
-    pDynamicOneArgFunc = (pOneArgProt)(dedicated_srv + 0x000C4B70);
-    uint32_t returnVal = pDynamicOneArgFunc(arg0);
-
-    Value* a_leak = *leakedResourcesVpkSystem;
-
-    while(a_leak)
-    {
-        VpkMemoryLeak* the_leak = (VpkMemoryLeak*)(a_leak->value);
-        uint32_t packed_object = the_leak->packed_ref;
-
-        if(packed_object == arg0)
-        {
-            ValueList vpk_leak_list = the_leak->leaked_refs;
-            
-            int removed_items = DeleteAllValuesInList(vpk_leak_list, true, NULL);
-
-            rootconsole->ConsolePrint("[VPK Hook] released [%d] memory leaks!", removed_items);
-
-            bool success = RemoveFromValuesList(leakedResourcesVpkSystem, the_leak, NULL);
-
-            free(vpk_leak_list);
-            free(the_leak);
-
-            if(!success)
-            {
-                rootconsole->ConsolePrint("[VPK Hook] Expected to remove leak but failed!");
-                exit(EXIT_FAILURE);
-            }
-
-            return returnVal;
-        }
-
-        a_leak = a_leak->nextVal;
-    }
-
-    return returnVal;
-}
-
-uint32_t HooksSynergy::PhysSimEnt(uint32_t arg0)
-{
-    pOneArgProt pDynamicOneArgFunc;
-
-    if(arg0 == 0)
-    {
-        rootconsole->ConsolePrint("Passed NULL simulation entity!");
-        exit(EXIT_FAILURE);
-        return 0;
-    }
-
-    uint32_t sim_ent_ref = *(uint32_t*)(arg0+offsets.refhandle_offset);
-    uint32_t object_check = functions.GetCBaseEntity(sim_ent_ref);
-
-    if(object_check == 0)
-    {
-        rootconsole->ConsolePrint("Passed in non-existant simulation entity!");
-        exit(EXIT_FAILURE);
-        return 0;
-    }
-
-    char* clsname =  (char*) ( *(uint32_t*)(arg0+offsets.classname_offset) );
-
-    if(IsMarkedForDeletion(arg0+offsets.iserver_offset))
-    {
-        rootconsole->ConsolePrint("Simulation ignored for [%s]", clsname);
-        return 0;
-    }
-
-    pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x0074E3D0);
-    return pDynamicOneArgFunc(arg0);
-}
-
-uint32_t HooksSynergy::CreateEntityByNameHook(uint32_t arg0, uint32_t arg1)
-{
-    pTwoArgProt pDynamicTwoArgFunc;
-
-    pDynamicTwoArgFunc = (pTwoArgProt)(server_srv + 0x007005E0);
-    return pDynamicTwoArgFunc(arg0, arg1);
-}
-
-uint32_t HooksSynergy::HookInstaKill(uint32_t arg0)
-{
-    InstaKill(arg0, true);
-    return 0;
 }
 
 uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
@@ -490,113 +397,13 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     return 0;
 }
 
-uint32_t HooksSynergy::VPhysicsSetObjectHook(uint32_t arg0, uint32_t arg1)
-{
-    pOneArgProt pDynamicOneArgFunc;
-    pTwoArgProt pDynamicTwoArgFunc;
-
-    if(IsEntityValid(arg0))
-    {
-        uint32_t vphysics_object = *(uint32_t*)(arg0+offsets.vphysics_object_offset);
-
-        if(vphysics_object)
-        {
-            rootconsole->ConsolePrint("Attempting override existing vphysics object!!!!");
-            return 0;
-        }
-
-        *(uint32_t*)(arg0+offsets.vphysics_object_offset) = arg1;
-
-        return 0;
-    }
-
-    rootconsole->ConsolePrint("Entity was invalid failed to set vphysics object!");
-    return 0;
-}
-
-uint32_t HooksSynergy::AcceptInputHook(uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5)
-{
-    pOneArgProt pDynamicOneArgFunc;
-    pTwoArgProt pDynamicTwoArgFunc;
-    pSixArgProt pDynamicSixArgProt;
-
-    // CBaseEntity arg0 arg2 arg3
-
-    bool failure = false;
-
-    if(IsEntityValid(arg0) == 0) failure = true;
-
-    if(failure)
-    {
-        //rootconsole->ConsolePrint("AcceptInput blocked on marked entity");
-        return 0;
-    }
-
-    //Passed sanity check
-    pDynamicSixArgProt = (pSixArgProt)(server_srv + 0x005B4850);
-    return pDynamicSixArgProt(arg0, arg1, arg2, arg3, arg4, arg5);
-}
-
-uint32_t HooksSynergy::CollisionRulesChangedHook(uint32_t arg0)
-{
-    InsertEntityToCollisionsList(arg0);
-    return 0;
-}
-
-uint32_t HooksSynergy::CanSatisfyVpkCacheInternalHook(uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5, uint32_t arg6)
-{
-    pOneArgProt pDynamicOneArgFunc;
-    pSevenArgProt pDynamicSevenArgFunc;
-
-    pDynamicSevenArgFunc = (pSevenArgProt)(dedicated_srv + 0x000C7EB0);
-    uint32_t returnVal = pDynamicSevenArgFunc(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
-
-    if(current_vpk_buffer_ref)
-    {
-        uint32_t allocated_vpk_buffer = *(uint32_t*)(current_vpk_buffer_ref+0x10);
-
-        if(allocated_vpk_buffer && global_vpk_cache_buffer == allocated_vpk_buffer)
-        {
-            //rootconsole->ConsolePrint("Removed global vpk buffer from VPK tree!");
-            *(uint32_t*)(current_vpk_buffer_ref+0x10) = 0;
-        }
-        else
-        {
-            rootconsole->ConsolePrint("Failed to remove global vpk buffer!!!");
-            exit(1);
-        }
-
-        current_vpk_buffer_ref = 0;
-    }
-
-    return returnVal;
-}
-
 uint32_t HooksSynergy::AutosaveHook(uint32_t arg0)
 {
     savegame = true;
     return 0;
 }
 
-uint32_t HooksSynergy::UTIL_RemoveBaseHook(uint32_t arg0)
-{
-    RemoveEntityNormal(arg0, true);
-    return 0;
-}
-
 void HookFunctionsSynergy()
 {
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x007005E0), (void*)HooksSynergy::CreateEntityByNameHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x008A0AC0), (void*)HooksSynergy::UTIL_RemoveHookFailsafe);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x008A0BD0), (void*)HooksSynergy::UTIL_RemoveBaseHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x008A0DF0), (void*)HooksSynergy::HookInstaKill);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x0074E3D0), (void*)HooksSynergy::PhysSimEnt);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x005B4850), (void*)HooksSynergy::AcceptInputHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x005AF050), (void*)HooksSynergy::UpdateOnRemove);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x005D01E0), (void*)HooksSynergy::VPhysicsSetObjectHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x005D0240), (void*)HooksSynergy::CollisionRulesChangedHook);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00BEC530), (void*)HooksSynergy::AutosaveHook);
-
-    HookFunction(dedicated_srv, dedicated_srv_size, (void*)(dedicated_srv + 0x000C4B70), (void*)HooksSynergy::PackedStoreDestructorHook);
-    HookFunction(dedicated_srv, dedicated_srv_size, (void*)(dedicated_srv + 0x000C7EB0), (void*)HooksSynergy::CanSatisfyVpkCacheInternalHook);
 }

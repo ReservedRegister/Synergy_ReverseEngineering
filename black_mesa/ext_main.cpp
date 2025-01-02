@@ -77,16 +77,28 @@ bool InitExtensionBlackMesa()
     offsets.m_CollisionGroup_offset = 500;
 
     functions.GetCBaseEntity = (pOneArgProt)(GetCBaseEntityBlackMesa);
+    functions.SpawnPlayer = (pOneArgProt)(server_srv + 0x005983C0);
+    functions.RemoveNormalDirect = (pOneArgProt)(server_srv + 0x00A92160);
     functions.RemoveNormal = (pOneArgProt)(server_srv + 0x00A921F0);
     functions.RemoveInsta = (pOneArgProt)(server_srv + 0x00A92260);
+    functions.CreateEntityByName = (pTwoArgProt)(server_srv + 0x008B4C80);
+    functions.PhysSimEnt = (pOneArgProt)(server_srv + 0x009919D0);
+    functions.AcceptInput = (pSixArgProt)(server_srv + 0x004F5B50);
+    functions.UpdateOnRemoveBase = (pOneArgProt)(server_srv + 0x004FD670);
+    functions.VphysicsSetObject = (pOneArgProt)(server_srv + 0x00294D00);
+    functions.ClearAllEntities = (pOneArgProt)(server_srv + 0x007E9040);
     functions.SetSolidFlags = (pTwoArgProt)(server_srv + 0x00336C60);
     functions.DisableEntityCollisions = (pTwoArgProt)(server_srv + 0x00379460);
     functions.EnableEntityCollisions = (pTwoArgProt)(server_srv + 0x003794D0);
     functions.CollisionRulesChanged = (pOneArgProt)(server_srv + 0x00294C60);
     functions.FindEntityByClassname = (pThreeArgProt)(server_srv + 0x007E7030);
     functions.CleanupDeleteList = (pOneArgProt)(server_srv + 0x007E6D20);
+    functions.PackedStoreDestructor = (pOneArgProt)(dedicated_srv + 0x000B1AE0);
+    functions.CanSatisfyVpkCacheInternal = (pSevenArgProt)(dedicated_srv + 0x000B5460);
 
     PopulateHookExclusionListsBlackMesa();
+
+    InitUtil();
 
     ApplyPatchesBlackMesa();
     ApplyPatchesSpecificBlackMesa();
@@ -130,11 +142,11 @@ void ApplyPatchesBlackMesa()
     *(uint32_t*)(hook_game_frame_delete_list+1) = offset;
 
     uint32_t eventqueue_hook = server_srv + 0x008404FD;
-    offset = (uint32_t)HooksBlackMesa::EmptyCall - eventqueue_hook - 5;
+    offset = (uint32_t)HooksUtil::EmptyCall - eventqueue_hook - 5;
     *(uint32_t*)(eventqueue_hook+1) = offset;
 
     uint32_t remove_post_systems = server_srv + 0x008404F8;
-    offset = (uint32_t)HooksBlackMesa::EmptyCall - remove_post_systems - 5;
+    offset = (uint32_t)HooksUtil::EmptyCall - remove_post_systems - 5;
     *(uint32_t*)(remove_post_systems+1) = offset;
 
     uint32_t precache_other_patch = server_srv + 0x00A96061;
@@ -159,25 +171,11 @@ void ApplyPatchesBlackMesa()
 
 void HookFunctionsBlackMesa()
 {
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x008B4C80), (void*)HooksBlackMesa::CreateEntityByNameHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00A921F0), (void*)HooksBlackMesa::UTIL_RemoveBaseHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00A92160), (void*)HooksBlackMesa::UTIL_RemoveHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x009919D0), (void*)HooksBlackMesa::PhysSimEnt);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00A92260), (void*)HooksBlackMesa::HookInstaKill);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x0078FC70), (void*)HooksBlackMesa::RagdollBreakHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x004F5B50), (void*)HooksBlackMesa::AcceptInputHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x004FD670), (void*)HooksBlackMesa::UpdateOnRemove);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x005983C0), (void*)HooksBlackMesa::PlayerSpawnHook);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x0061B4C0), (void*)HooksBlackMesa::CXenShieldController_UpdateOnRemoveHook);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00A92540), (void*)HooksBlackMesa::UTIL_GetLocalPlayerHook);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x0046B510), (void*)HooksBlackMesa::TestGroundMove);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00294D00), (void*)HooksBlackMesa::VPhysicsSetObjectHook);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00A02D40), (void*)HooksBlackMesa::ShouldHitEntityHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00294C60), (void*)HooksBlackMesa::CollisionRulesChangedHook);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x007E9040), (void*)HooksBlackMesa::GlobalEntityListClear);
-    
-    HookFunction(dedicated_srv, dedicated_srv_size, (void*)(dedicated_srv + 0x000B5460), (void*)HooksBlackMesa::CanSatisfyVpkCacheInternalHook);
-    HookFunction(dedicated_srv, dedicated_srv_size, (void*)(dedicated_srv + 0x000B1AE0), (void*)HooksBlackMesa::PackedStoreDestructorHook);
 }
 
 uint32_t HooksBlackMesa::RagdollBreakHook(uint32_t arg0, uint32_t arg1, uint32_t arg2)
@@ -249,78 +247,6 @@ uint32_t HooksBlackMesa::CreateNoSpawnHookRagdollBreaking(uint32_t arg0, uint32_
     return 0;
 }
 
-uint32_t HooksBlackMesa::CanSatisfyVpkCacheInternalHook(uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5, uint32_t arg6)
-{
-    pOneArgProt pDynamicOneArgFunc;
-    pSevenArgProt pDynamicSevenArgFunc;
-
-    pDynamicSevenArgFunc = (pSevenArgProt)(dedicated_srv + 0x000B5460);
-    uint32_t returnVal = pDynamicSevenArgFunc(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
-
-    if(current_vpk_buffer_ref)
-    {
-        uint32_t allocated_vpk_buffer = *(uint32_t*)(current_vpk_buffer_ref+0x10);
-
-        if(allocated_vpk_buffer && global_vpk_cache_buffer == allocated_vpk_buffer)
-        {
-            //rootconsole->ConsolePrint("Removed global vpk buffer from VPK tree!");
-            *(uint32_t*)(current_vpk_buffer_ref+0x10) = 0;
-        }
-        else
-        {
-            rootconsole->ConsolePrint("Failed to remove global vpk buffer!!!");
-            exit(1);
-        }
-
-        current_vpk_buffer_ref = 0;
-    }
-
-    return returnVal;
-}
-
-uint32_t HooksBlackMesa::PackedStoreDestructorHook(uint32_t arg0)
-{
-    //Remove ref to store only valid objects!
-    pOneArgProt pDynamicOneArgFunc;
-
-    pDynamicOneArgFunc = (pOneArgProt)(dedicated_srv + 0x000B1AE0);
-    uint32_t returnVal = pDynamicOneArgFunc(arg0);
-
-    Value* a_leak = *leakedResourcesVpkSystem;
-
-    while(a_leak)
-    {
-        VpkMemoryLeak* the_leak = (VpkMemoryLeak*)(a_leak->value);
-        uint32_t packed_object = the_leak->packed_ref;
-
-        if(packed_object == arg0)
-        {
-            ValueList vpk_leak_list = the_leak->leaked_refs;
-            
-            int removed_items = DeleteAllValuesInList(vpk_leak_list, true, NULL);
-
-            rootconsole->ConsolePrint("[VPK Hook] released [%d] memory leaks!", removed_items);
-
-            bool success = RemoveFromValuesList(leakedResourcesVpkSystem, the_leak, NULL);
-
-            free(vpk_leak_list);
-            free(the_leak);
-
-            if(!success)
-            {
-                rootconsole->ConsolePrint("[VPK Hook] Expected to remove leak but failed!");
-                exit(EXIT_FAILURE);
-            }
-
-            return returnVal;
-        }
-
-        a_leak = a_leak->nextVal;
-    }
-
-    return returnVal;
-}
-
 uint32_t HooksBlackMesa::VpkCacheBufferAllocHook(uint32_t arg0)
 {
     uint32_t ebp = 0;
@@ -386,36 +312,6 @@ uint32_t HooksBlackMesa::VpkCacheBufferAllocHook(uint32_t arg0)
     return vpk_buffer;
 }
 
-uint32_t HooksBlackMesa::CollisionRulesChangedHook(uint32_t arg0)
-{
-    InsertEntityToCollisionsList(arg0);
-    return 0;
-}
-
-uint32_t HooksBlackMesa::VPhysicsSetObjectHook(uint32_t arg0, uint32_t arg1)
-{
-    pOneArgProt pDynamicOneArgFunc;
-    pTwoArgProt pDynamicTwoArgFunc;
-
-    if(IsEntityValid(arg0))
-    {
-        uint32_t vphysics_object = *(uint32_t*)(arg0+offsets.vphysics_object_offset);
-
-        if(vphysics_object)
-        {
-            rootconsole->ConsolePrint("Attempting override existing vphysics object!!!!");
-            return 0;
-        }
-
-        *(uint32_t*)(arg0+offsets.vphysics_object_offset) = arg1;
-
-        return 0;
-    }
-
-    rootconsole->ConsolePrint("Entity was invalid failed to set vphysics object!");
-    return 0;
-}
-
 uint32_t HooksBlackMesa::ShouldHitEntityHook(uint32_t arg0, uint32_t arg1, uint32_t arg2)
 {
     pOneArgProt pDynamicOneArgFunc;
@@ -461,22 +357,6 @@ uint32_t HooksBlackMesa::InstaKillPatchHook(uint32_t arg0)
     return 0;
 }
 
-uint32_t HooksBlackMesa::UpdateOnRemove(uint32_t arg0)
-{
-    pOneArgProt pDynamicOneArgFunc;
-
-    if(*(uint32_t*)(fields.RemoveImmediateSemaphore) != 0)
-        normal_delete_counter++;
-
-    pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x004FD670);
-    return pDynamicOneArgFunc(arg0);
-}
-
-uint32_t HooksBlackMesa::EmptyCall()
-{
-    return 0;
-}
-
 uint32_t HooksBlackMesa::CallocHook(uint32_t nitems, uint32_t size)
 {
     if(nitems <= 0) return (uint32_t)calloc(nitems, size);
@@ -506,25 +386,6 @@ uint32_t HooksBlackMesa::OperatorNewArrayHook(uint32_t size)
     return newRef;
 }
 
-uint32_t HooksBlackMesa::UTIL_RemoveBaseHook(uint32_t arg0)
-{
-    RemoveEntityNormal(arg0, true);
-    return 0;
-}
-
-uint32_t HooksBlackMesa::UTIL_RemoveHook(uint32_t arg0)
-{
-    if(arg0 == 0)
-    {
-        rootconsole->ConsolePrint("Remove was NULL");
-        return 0;
-    }
-    
-    uint32_t cbaseobject = arg0-offsets.iserver_offset;
-    RemoveEntityNormal(cbaseobject, true);
-    return 0;
-}
-
 uint32_t HooksBlackMesa::CXenShieldController_UpdateOnRemoveHook(uint32_t arg0)
 {
     pOneArgProt pDynamicOneArgFunc;
@@ -533,20 +394,7 @@ uint32_t HooksBlackMesa::CXenShieldController_UpdateOnRemoveHook(uint32_t arg0)
     uint32_t returnVal = pDynamicOneArgFunc(arg0);
 
     //Add missing call to UpdateOnRemove
-    HooksBlackMesa::UpdateOnRemove(arg0);
-
-    return returnVal;
-}
-
-uint32_t HooksBlackMesa::PlayerSpawnHook(uint32_t arg0)
-{
-    pOneArgProt pDynamicOneArgFunc;
-
-    pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x005983C0);
-    uint32_t returnVal = pDynamicOneArgFunc(arg0);
-
-    firstplayer_hasjoined = true;
-    player_worldspawn_collision_disabled = false;
+    functions.UpdateOnRemoveBase(arg0);
 
     return returnVal;
 }
@@ -621,90 +469,6 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
     functions.CleanupDeleteList(0);
 
     return 0;
-}
-
-uint32_t HooksBlackMesa::GlobalEntityListClear(uint32_t arg0)
-{
-    pOneArgProt pDynamicOneArgFunc;
-
-    //LogVpkMemoryLeaks();
-
-    isTicking = false;
-    firstplayer_hasjoined = false;
-
-    pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x007E9040);
-    return pDynamicOneArgFunc(arg0);
-}
-
-uint32_t HooksBlackMesa::HookInstaKill(uint32_t arg0)
-{
-    InstaKill(arg0, true);
-    return 0;
-}
-
-uint32_t HooksBlackMesa::CreateEntityByNameHook(uint32_t arg0, uint32_t arg1)
-{
-    pTwoArgProt pDynamicTwoArgFunc;
-    pThreeArgProt pDynamicThreeArgFunc;
-
-    pDynamicTwoArgFunc = (pTwoArgProt)(server_srv + 0x008B4C80);
-    return pDynamicTwoArgFunc(arg0, arg1);
-}
-
-uint32_t HooksBlackMesa::PhysSimEnt(uint32_t arg0)
-{
-    pOneArgProt pDynamicOneArgFunc;
-
-    if(arg0 == 0)
-    {
-        rootconsole->ConsolePrint("Passed NULL simulation entity!");
-        exit(EXIT_FAILURE);
-        return 0;
-    }
-
-    uint32_t refHandle = *(uint32_t*)(arg0+offsets.refhandle_offset);
-    uint32_t object_check = functions.GetCBaseEntity(refHandle);
-
-    if(object_check == 0)
-    {
-        rootconsole->ConsolePrint("Passed in non-existant simulation entity!");
-        exit(EXIT_FAILURE);
-        return 0;
-    }
-
-    char* clsname =  (char*)( *(uint32_t*)(arg0+offsets.classname_offset) );
-
-    if(IsMarkedForDeletion(arg0+offsets.iserver_offset))
-    {
-        rootconsole->ConsolePrint("Simulation ignored for [%s]", clsname);
-        return 0;
-    }
-
-    pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x009919D0);
-    return pDynamicOneArgFunc(arg0);
-}
-
-uint32_t HooksBlackMesa::AcceptInputHook(uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5)
-{
-    pOneArgProt pDynamicOneArgFunc;
-    pTwoArgProt pDynamicTwoArgFunc;
-
-    // CBaseEntity arg0 arg2 arg3
-
-    bool failure = false;
-
-    if(IsEntityValid(arg0) == 0) failure = true;
-
-    if(failure)
-    {
-        //rootconsole->ConsolePrint("AcceptInput blocked a marked entity!");
-        return 0;
-    }
-
-    //Passed sanity check
-    pSixArgProt pDynamicSixArgProt;
-    pDynamicSixArgProt = (pSixArgProt)(server_srv + 0x004F5B50);
-    return pDynamicSixArgProt(arg0, arg1, arg2, arg3, arg4, arg5);
 }
 
 uint32_t HooksBlackMesa::TestGroundMove(uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5, uint32_t arg6)

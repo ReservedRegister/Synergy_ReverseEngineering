@@ -55,6 +55,254 @@ void InitUtil()
     server_sleeping = false;
     global_vpk_cache_buffer = (uint32_t)malloc(0x00100000);
     current_vpk_buffer_ref = 0;
+
+    HookFunctionsUtil();
+}
+
+void HookFunctionsUtil()
+{
+    HookFunction(server_srv, server_srv_size, (void*)(functions.CreateEntityByName), (void*)HooksUtil::CreateEntityByNameHook);
+    HookFunction(server_srv, server_srv_size, (void*)(functions.RemoveNormalDirect), (void*)HooksUtil::UTIL_RemoveHookFailsafe);
+    HookFunction(server_srv, server_srv_size, (void*)(functions.RemoveNormal), (void*)HooksUtil::UTIL_RemoveBaseHook);
+    HookFunction(server_srv, server_srv_size, (void*)(functions.RemoveInsta), (void*)HooksUtil::HookInstaKill);
+    HookFunction(server_srv, server_srv_size, (void*)(functions.PhysSimEnt), (void*)HooksUtil::PhysSimEnt);
+    HookFunction(server_srv, server_srv_size, (void*)(functions.AcceptInput), (void*)HooksUtil::AcceptInputHook);
+    HookFunction(server_srv, server_srv_size, (void*)(functions.UpdateOnRemoveBase), (void*)HooksUtil::UpdateOnRemove);
+    HookFunction(server_srv, server_srv_size, (void*)(functions.VphysicsSetObject), (void*)HooksUtil::VPhysicsSetObjectHook);
+    HookFunction(server_srv, server_srv_size, (void*)(functions.CollisionRulesChanged), (void*)HooksUtil::CollisionRulesChangedHook);
+    HookFunction(server_srv, server_srv_size, (void*)(functions.ClearAllEntities), (void*)HooksUtil::GlobalEntityListClear);
+    HookFunction(server_srv, server_srv_size, (void*)(functions.SpawnPlayer), (void*)HooksUtil::PlayerSpawnHook);
+
+    HookFunction(dedicated_srv, dedicated_srv_size, (void*)(functions.PackedStoreDestructor), (void*)HooksUtil::PackedStoreDestructorHook);
+    HookFunction(dedicated_srv, dedicated_srv_size, (void*)(functions.CanSatisfyVpkCacheInternal), (void*)HooksUtil::CanSatisfyVpkCacheInternalHook);
+}
+
+uint32_t HooksUtil::EmptyCall()
+{
+    return 0;
+}
+
+uint32_t HooksUtil::CanSatisfyVpkCacheInternalHook(uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5, uint32_t arg6)
+{
+    pSevenArgProt pDynamicSevenArgFunc;
+
+    pDynamicSevenArgFunc = (pSevenArgProt)(functions.CanSatisfyVpkCacheInternal);
+    uint32_t returnVal = pDynamicSevenArgFunc(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
+
+    if(current_vpk_buffer_ref)
+    {
+        uint32_t allocated_vpk_buffer = *(uint32_t*)(current_vpk_buffer_ref+0x10);
+
+        if(allocated_vpk_buffer && global_vpk_cache_buffer == allocated_vpk_buffer)
+        {
+            //rootconsole->ConsolePrint("Removed global vpk buffer from VPK tree!");
+            *(uint32_t*)(current_vpk_buffer_ref+0x10) = 0;
+        }
+        else
+        {
+            rootconsole->ConsolePrint("Failed to remove global vpk buffer!!!");
+            exit(1);
+        }
+
+        current_vpk_buffer_ref = 0;
+    }
+
+    return returnVal;
+}
+
+uint32_t HooksUtil::PackedStoreDestructorHook(uint32_t arg0)
+{
+    //Remove ref to store only valid objects!
+    pOneArgProt pDynamicOneArgFunc;
+
+    pDynamicOneArgFunc = (pOneArgProt)(functions.PackedStoreDestructor);
+    uint32_t returnVal = pDynamicOneArgFunc(arg0);
+
+    Value* a_leak = *leakedResourcesVpkSystem;
+
+    while(a_leak)
+    {
+        VpkMemoryLeak* the_leak = (VpkMemoryLeak*)(a_leak->value);
+        uint32_t packed_object = the_leak->packed_ref;
+
+        if(packed_object == arg0)
+        {
+            ValueList vpk_leak_list = the_leak->leaked_refs;
+            
+            int removed_items = DeleteAllValuesInList(vpk_leak_list, true, NULL);
+
+            rootconsole->ConsolePrint("[VPK Hook] released [%d] memory leaks!", removed_items);
+
+            bool success = RemoveFromValuesList(leakedResourcesVpkSystem, the_leak, NULL);
+
+            free(vpk_leak_list);
+            free(the_leak);
+
+            if(!success)
+            {
+                rootconsole->ConsolePrint("[VPK Hook] Expected to remove leak but failed!");
+                exit(EXIT_FAILURE);
+            }
+
+            return returnVal;
+        }
+
+        a_leak = a_leak->nextVal;
+    }
+
+    return returnVal;
+}
+
+uint32_t HooksUtil::PlayerSpawnHook(uint32_t arg0)
+{
+    pOneArgProt pDynamicOneArgFunc;
+
+    pDynamicOneArgFunc = (pOneArgProt)(functions.SpawnPlayer);
+    uint32_t returnVal = pDynamicOneArgFunc(arg0);
+
+    firstplayer_hasjoined = true;
+    player_worldspawn_collision_disabled = false;
+
+    return returnVal;
+}
+
+uint32_t HooksUtil::GlobalEntityListClear(uint32_t arg0)
+{
+    pOneArgProt pDynamicOneArgFunc;
+
+    //LogVpkMemoryLeaks();
+
+    isTicking = false;
+    firstplayer_hasjoined = false;
+
+    pDynamicOneArgFunc = (pOneArgProt)(functions.ClearAllEntities);
+    return pDynamicOneArgFunc(arg0);
+}
+
+uint32_t HooksUtil::UTIL_RemoveHookFailsafe(uint32_t arg0)
+{
+    // THIS IS UTIL_Remove(IServerNetworable*)
+    // THIS HOOK IS FOR UNUSUAL CALLS TO UTIL_Remove probably from sourcemod!
+
+    if(arg0 == 0) return 0;
+    RemoveEntityNormal(arg0-offsets.iserver_offset, true);
+    return 0;
+}
+
+uint32_t HooksUtil::UpdateOnRemove(uint32_t arg0)
+{
+    pOneArgProt pDynamicOneArgFunc;
+
+    char* classname = (char*)(*(uint32_t*)(arg0+offsets.classname_offset));
+
+    if(*(uint32_t*)(fields.RemoveImmediateSemaphore) != 0)
+        normal_delete_counter++;
+
+    //rootconsole->ConsolePrint("normal counter: [%d] [%d] [%s]", normal_delete_counter, hooked_delete_counter, classname);
+
+    pDynamicOneArgFunc = (pOneArgProt)(functions.UpdateOnRemoveBase);
+    return pDynamicOneArgFunc(arg0);
+}
+
+uint32_t HooksUtil::PhysSimEnt(uint32_t arg0)
+{
+    pOneArgProt pDynamicOneArgFunc;
+
+    if(arg0 == 0)
+    {
+        rootconsole->ConsolePrint("Passed NULL simulation entity!");
+        exit(EXIT_FAILURE);
+        return 0;
+    }
+
+    uint32_t sim_ent_ref = *(uint32_t*)(arg0+offsets.refhandle_offset);
+    uint32_t object_check = functions.GetCBaseEntity(sim_ent_ref);
+
+    if(object_check == 0)
+    {
+        rootconsole->ConsolePrint("Passed in non-existant simulation entity!");
+        exit(EXIT_FAILURE);
+        return 0;
+    }
+
+    char* clsname =  (char*) ( *(uint32_t*)(arg0+offsets.classname_offset) );
+
+    if(IsMarkedForDeletion(arg0+offsets.iserver_offset))
+    {
+        rootconsole->ConsolePrint("Simulation ignored for [%s]", clsname);
+        return 0;
+    }
+
+    pDynamicOneArgFunc = (pOneArgProt)(functions.PhysSimEnt);
+    return pDynamicOneArgFunc(arg0);
+}
+
+uint32_t HooksUtil::CreateEntityByNameHook(uint32_t arg0, uint32_t arg1)
+{
+    pTwoArgProt pDynamicTwoArgFunc;
+
+    pDynamicTwoArgFunc = (pTwoArgProt)(functions.CreateEntityByName);
+    return pDynamicTwoArgFunc(arg0, arg1);
+}
+
+uint32_t HooksUtil::HookInstaKill(uint32_t arg0)
+{
+    InstaKill(arg0, true);
+    return 0;
+}
+
+uint32_t HooksUtil::VPhysicsSetObjectHook(uint32_t arg0, uint32_t arg1)
+{
+    if(IsEntityValid(arg0))
+    {
+        uint32_t vphysics_object = *(uint32_t*)(arg0+offsets.vphysics_object_offset);
+
+        if(vphysics_object)
+        {
+            rootconsole->ConsolePrint("Attempting override existing vphysics object!!!!");
+            return 0;
+        }
+
+        *(uint32_t*)(arg0+offsets.vphysics_object_offset) = arg1;
+
+        return 0;
+    }
+
+    rootconsole->ConsolePrint("Entity was invalid failed to set vphysics object!");
+    return 0;
+}
+
+uint32_t HooksUtil::AcceptInputHook(uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5)
+{
+    pSixArgProt pDynamicSixArgProt;
+
+    // CBaseEntity arg0 arg2 arg3
+
+    bool failure = false;
+
+    if(IsEntityValid(arg0) == 0) failure = true;
+
+    if(failure)
+    {
+        //rootconsole->ConsolePrint("AcceptInput blocked on marked entity");
+        return 0;
+    }
+
+    //Passed sanity check
+    pDynamicSixArgProt = (pSixArgProt)(functions.AcceptInput);
+    return pDynamicSixArgProt(arg0, arg1, arg2, arg3, arg4, arg5);
+}
+
+uint32_t HooksUtil::CollisionRulesChangedHook(uint32_t arg0)
+{
+    InsertEntityToCollisionsList(arg0);
+    return 0;
+}
+
+uint32_t HooksUtil::UTIL_RemoveBaseHook(uint32_t arg0)
+{
+    RemoveEntityNormal(arg0, true);
+    return 0;
 }
 
 void LogVpkMemoryLeaks()
@@ -685,8 +933,12 @@ void RemoveEntityNormal(uint32_t entity_object, bool validate)
     {
         if(classname && strcmp(classname, "player") == 0)
         {
-            rootconsole->ConsolePrint("Tried killing player but was protected!");
-            return;
+            if(isTicking)
+            {
+                functions.SpawnPlayer(object_verify);
+                rootconsole->ConsolePrint("Tried killing player but was protected & respawned!");
+                return;
+            }
         }
 
         if(IsMarkedForDeletion(object_verify+offsets.iserver_offset)) return;

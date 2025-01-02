@@ -1,6 +1,25 @@
 #ifndef UTIL_H
 #define UTIL_H
 
+class HooksUtil
+{
+public:
+	static uint32_t EmptyCall();
+	static uint32_t CreateEntityByNameHook(uint32_t arg0, uint32_t arg1);
+	static uint32_t PhysSimEnt(uint32_t arg0);
+	static uint32_t HookInstaKill(uint32_t arg0);
+	static uint32_t UTIL_RemoveHookFailsafe(uint32_t arg0);
+	static uint32_t UTIL_RemoveBaseHook(uint32_t arg0);
+	static uint32_t AcceptInputHook(uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5);
+	static uint32_t UpdateOnRemove(uint32_t arg0);
+	static uint32_t VPhysicsSetObjectHook(uint32_t arg0, uint32_t arg1);
+	static uint32_t CollisionRulesChangedHook(uint32_t arg0);
+	static uint32_t GlobalEntityListClear(uint32_t arg0);
+	static uint32_t CanSatisfyVpkCacheInternalHook(uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5, uint32_t arg6);
+	static uint32_t PackedStoreDestructorHook(uint32_t arg0);
+	static uint32_t PlayerSpawnHook(uint32_t arg0);
+};
+
 typedef uint32_t (*pZeroArgProt)();
 typedef uint32_t (*pOneArgProt)(uint32_t);
 typedef uint32_t (*pTwoArgProt)(uint32_t, uint32_t);
@@ -38,6 +57,8 @@ typedef struct _game_offsets {
 } game_offsets;
 
 typedef struct _game_functions {
+	pOneArgProt SpawnPlayer;
+	pOneArgProt RemoveNormalDirect;
 	pOneArgProt RemoveNormal;
 	pOneArgProt RemoveInsta;
     pOneArgProt GetCBaseEntity;
@@ -47,6 +68,14 @@ typedef struct _game_functions {
 	pOneArgProt CollisionRulesChanged;
 	pThreeArgProt FindEntityByClassname;
 	pOneArgProt CleanupDeleteList;
+	pTwoArgProt CreateEntityByName;
+	pOneArgProt PhysSimEnt;
+	pSixArgProt AcceptInput;
+	pOneArgProt UpdateOnRemoveBase;
+	pOneArgProt VphysicsSetObject;
+	pOneArgProt ClearAllEntities;
+	pOneArgProt PackedStoreDestructor;
+	pSevenArgProt CanSatisfyVpkCacheInternal;
 } game_functions;
 
 typedef struct _Vector {
@@ -131,6 +160,7 @@ extern uint32_t global_vpk_cache_buffer;
 extern uint32_t current_vpk_buffer_ref;
 extern ValueList leakedResourcesVpkSystem;
 
+void InitUtil();
 void* copy_val(void* val, size_t copy_size);
 bool IsAddressExcluded(uint32_t base_address, uint32_t search_address);
 void HookFunction(uint32_t base_address, uint32_t size, void* target_pointer, void* hook_pointer);
@@ -152,6 +182,7 @@ bool IsEntityPositionReasonable(uint32_t v);
 uint32_t IsEntityValid(uint32_t entity);
 void LogVpkMemoryLeaks();
 void FixPlayerCollisionGroup();
+void HookFunctionsUtil();
 
 ValueList AllocateValuesList();
 Value* CreateNewValue(void* valueInput);
