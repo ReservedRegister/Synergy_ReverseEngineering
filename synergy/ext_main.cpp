@@ -431,7 +431,7 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     {
         server_sleeping = false;
     }
-    
+
     RemoveBadEnts();
 
     functions.CleanupDeleteList(0);
@@ -492,7 +492,7 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
 
         savegame = false;
     }
-    
+
     RemoveBadEnts();
     
     return 0;
