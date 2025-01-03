@@ -432,6 +432,12 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
 
     RemoveBadEnts();
 
+    SpawnPlayers();
+    FixPlayerCollisionGroup();
+    DisablePlayerWorldSpawnCollision();
+
+    RemoveBadEnts();
+
     functions.CleanupDeleteList(0);
 
     //SimulateEntities
@@ -441,9 +447,6 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
     functions.CleanupDeleteList(0);
 
     RemoveBadEnts();
-    SpawnPlayers();
-    FixPlayerCollisionGroup();
-    DisablePlayerWorldSpawnCollision();
     UpdateAllCollisions();
 
     functions.CleanupDeleteList(0);

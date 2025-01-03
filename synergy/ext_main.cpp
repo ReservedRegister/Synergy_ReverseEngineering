@@ -433,6 +433,12 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     }
 
     RemoveBadEnts();
+    
+    RemoveDanglingRestoredVehicles();
+    EnterRestoredVehicles();
+    SpawnPlayers();
+
+    RemoveBadEnts();
 
     functions.CleanupDeleteList(0);
 
@@ -443,9 +449,6 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     functions.CleanupDeleteList(0);
     
     RemoveBadEnts();
-    RemoveDanglingRestoredVehicles();
-    EnterRestoredVehicles();
-    SpawnPlayers();
     UpdateAllCollisions();
 
     functions.CleanupDeleteList(0);
