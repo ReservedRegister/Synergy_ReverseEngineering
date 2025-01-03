@@ -213,7 +213,8 @@ uint32_t HooksUtil::PlayerSpawnHook(uint32_t arg0)
     Value* new_player_spawn = CreateNewValue((void*)refHandle);
     InsertToValuesList(player_spawn_list, new_player_spawn, NULL, false, false);
 
-    return 0;
+    pDynamicOneArgFunc = (pOneArgProt)(functions.SpawnPlayer);
+    return pDynamicOneArgFunc(arg0);
 }
 
 uint32_t HooksUtil::GlobalEntityListClear(uint32_t arg0)
