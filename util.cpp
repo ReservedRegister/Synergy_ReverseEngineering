@@ -4,6 +4,8 @@
 #include <link.h>
 #include <sys/mman.h>
 
+Game game;
+
 game_fields fields;
 game_offsets offsets;
 game_functions functions;
@@ -42,6 +44,7 @@ uint32_t global_vpk_cache_buffer;
 uint32_t current_vpk_buffer_ref;
 
 ValueList leakedResourcesVpkSystem;
+ValueList player_spawn_list;
 
 void InitUtil()
 {
@@ -55,6 +58,7 @@ void InitUtil()
     server_sleeping = false;
     global_vpk_cache_buffer = (uint32_t)malloc(0x00100000);
     current_vpk_buffer_ref = 0;
+    player_spawn_list = AllocateValuesList();
 
     HookFunctionsUtil();
 }
@@ -75,6 +79,53 @@ void HookFunctionsUtil()
 
     HookFunction(dedicated_srv, dedicated_srv_size, (void*)(functions.PackedStoreDestructor), (void*)HooksUtil::PackedStoreDestructorHook);
     HookFunction(dedicated_srv, dedicated_srv_size, (void*)(functions.CanSatisfyVpkCacheInternal), (void*)HooksUtil::CanSatisfyVpkCacheInternalHook);
+}
+
+void SpawnPlayers()
+{
+    pThreeArgProt pDynamicThreeArgFunc;
+    Value* first_player = *player_spawn_list;
+
+    while(first_player)
+    {
+        uint32_t player = functions.GetCBaseEntity((uint32_t)first_player->value);
+
+        if(IsEntityValid(player))
+        {
+            rootconsole->ConsolePrint("Spawned player");
+
+            if(game == SYNERGY)
+            {
+                rootconsole->ConsolePrint("Exit Vehicle");
+                
+                Vector emptyVector;
+
+                uint32_t player_vehicle_refhandle = *(uint32_t*)(player+0x0D38);
+
+                //LeaveVehicle
+                pDynamicThreeArgFunc = (pThreeArgProt)( *(uint32_t*) ((*(uint32_t*)(player))+0x648) );
+                pDynamicThreeArgFunc(player, (uint32_t)&emptyVector, (uint32_t)&emptyVector);
+
+                RemoveEntityNormal(functions.GetCBaseEntity(player_vehicle_refhandle), true);
+            }
+
+            functions.CleanupDeleteList(0);
+
+            functions.SpawnPlayer(player);
+
+            functions.CleanupDeleteList(0);
+
+            firstplayer_hasjoined = true;
+            player_worldspawn_collision_disabled = false;
+        }
+
+        Value* next_player = first_player->nextVal;
+
+        free(first_player);
+        first_player = next_player;
+    }
+
+    *player_spawn_list = NULL;
 }
 
 uint32_t HooksUtil::EmptyCall()
@@ -157,13 +208,12 @@ uint32_t HooksUtil::PlayerSpawnHook(uint32_t arg0)
 {
     pOneArgProt pDynamicOneArgFunc;
 
-    pDynamicOneArgFunc = (pOneArgProt)(functions.SpawnPlayer);
-    uint32_t returnVal = pDynamicOneArgFunc(arg0);
+    uint32_t refHandle = *(uint32_t*)(arg0+offsets.refhandle_offset);
 
-    firstplayer_hasjoined = true;
-    player_worldspawn_collision_disabled = false;
+    Value* new_player_spawn = CreateNewValue((void*)refHandle);
+    InsertToValuesList(player_spawn_list, new_player_spawn, NULL, false, false);
 
-    return returnVal;
+    return 0;
 }
 
 uint32_t HooksUtil::GlobalEntityListClear(uint32_t arg0)
@@ -913,6 +963,7 @@ void RemoveBadEnts()
 void RemoveEntityNormal(uint32_t entity_object, bool validate)
 {
     pOneArgProt pDynamicOneArgFunc;
+    pThreeArgProt pDynamicThreeArgFunc;
 
     if(entity_object == 0) return;
 
@@ -935,7 +986,12 @@ void RemoveEntityNormal(uint32_t entity_object, bool validate)
         {
             if(isTicking)
             {
-                functions.SpawnPlayer(object_verify);
+                Value* new_player_spawn = CreateNewValue((void*)refHandle);
+                InsertToValuesList(player_spawn_list, new_player_spawn, NULL, false, false);
+
+                Value* respawn_player = CreateNewValue((void*)refHandle);
+                InsertToValuesList(player_spawn_list, respawn_player, NULL, false, false);
+
                 rootconsole->ConsolePrint("Tried killing player but was protected & respawned!");
                 return;
             }

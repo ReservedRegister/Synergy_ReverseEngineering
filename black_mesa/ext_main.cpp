@@ -43,6 +43,8 @@ bool InitExtensionBlackMesa()
         return false;
     }
 
+    game = BLACK_MESA;
+
     server_srv = server_srv_lib->library_base_address;
     engine_srv = engine_srv_lib->library_base_address;
     vphysics_srv = vphysics_srv_lib->library_base_address;
@@ -402,8 +404,6 @@ uint32_t HooksBlackMesa::CXenShieldController_UpdateOnRemoveHook(uint32_t arg0)
 uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
 {
     pOneArgProt pDynamicOneArgFunc;
-    pThreeArgProt pDynamicThreeArgFunc;
-
     isTicking = true;
 
     functions.CleanupDeleteList(0);
@@ -430,8 +430,6 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
         server_sleeping = false;
     }
 
-    functions.CleanupDeleteList(0);
-
     RemoveBadEnts();
 
     functions.CleanupDeleteList(0);
@@ -442,12 +440,11 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
 
     functions.CleanupDeleteList(0);
 
+    RemoveBadEnts();
+    SpawnPlayers();
     FixPlayerCollisionGroup();
     DisablePlayerWorldSpawnCollision();
     RemoveBadEnts();
-
-    functions.CleanupDeleteList(0);
-
     UpdateAllCollisions();
 
     functions.CleanupDeleteList(0);
@@ -467,6 +464,8 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
     pDynamicOneArgFunc(0);
 
     functions.CleanupDeleteList(0);
+
+    RemoveBadEnts();
 
     return 0;
 }

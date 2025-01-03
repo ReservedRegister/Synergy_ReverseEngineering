@@ -1,6 +1,11 @@
 #ifndef UTIL_H
 #define UTIL_H
 
+typedef enum {
+    SYNERGY,
+    BLACK_MESA
+} Game;
+
 class HooksUtil
 {
 public:
@@ -121,6 +126,8 @@ typedef struct _EntityOrigin {
 	float z;
 } EntityOrigin;
 
+extern Game game;
+
 extern game_fields fields;
 extern game_offsets offsets;
 extern game_functions functions;
@@ -183,6 +190,7 @@ uint32_t IsEntityValid(uint32_t entity);
 void LogVpkMemoryLeaks();
 void FixPlayerCollisionGroup();
 void HookFunctionsUtil();
+void SpawnPlayers();
 
 ValueList AllocateValuesList();
 Value* CreateNewValue(void* valueInput);

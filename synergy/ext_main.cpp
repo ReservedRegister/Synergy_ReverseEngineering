@@ -4,6 +4,10 @@
 #include "ext_main.h"
 #include "hooks_specific.h"
 
+uint32_t global_restore_player;
+ValueList restore_vehicle_list;
+ValueList dangling_restore_vehicles;
+
 bool InitExtensionSynergy()
 {
     if(loaded_extension)
@@ -44,6 +48,8 @@ bool InitExtensionSynergy()
         return false;
     }
 
+    game = SYNERGY;
+
     rootconsole->ConsolePrint("server_srv_lib [%X] size [%X]", server_srv_lib->library_base_address, server_srv_lib->library_size);
     rootconsole->ConsolePrint("engine_srv_lib [%X] size [%X]", engine_srv_lib->library_base_address, engine_srv_lib->library_size);
     rootconsole->ConsolePrint("dedicated_srv_lib [%X] size [%X]", dedicated_srv_lib->library_base_address, dedicated_srv_lib->library_size);
@@ -66,6 +72,10 @@ bool InitExtensionSynergy()
 
     RestoreLinkedLists();
     SaveProcessId();
+
+    global_restore_player = 0;
+    restore_vehicle_list = AllocateValuesList();
+    dangling_restore_vehicles = AllocateValuesList();
 
     fields.CGlobalEntityList = server_srv + 0x00EAB5BC;
     fields.sv = engine_srv + 0x00394538;
@@ -169,20 +179,12 @@ void ApplyPatchesSynergy()
     uint32_t patch_player_restore = server_srv + 0x00BDD0CC;
     memset((void*)patch_player_restore, 0x90, 0x26);
 
-    uint32_t patch_nearplayer_jmp_one = server_srv + 0x00C2AB61;
-    *(uint8_t*)(patch_nearplayer_jmp_one) = 0xE9;
-    *(uint32_t*)(patch_nearplayer_jmp_one+1) = 0x10D;
+    uint32_t removebad_restorecode = server_srv + 0x00BDCEED;
+    memset((void*)removebad_restorecode, 0x90, 2);
 
-    uint32_t patch_nearplayer_jmp_two = server_srv + 0x00C2AC78;
-    memset((void*)patch_nearplayer_jmp_two, 0x90, 2);
-
-    uint32_t patch_nearplayer_jmp_three = server_srv + 0x00C2ACEF;
-    *(uint8_t*)(patch_nearplayer_jmp_three) = 0xE9;
-    *(uint32_t*)(patch_nearplayer_jmp_three+1) = 0xAC;
-
-    uint32_t patch_nearplayer_jmp_four = server_srv + 0x00C2ADAD;
-    *(uint8_t*)(patch_nearplayer_jmp_four) = 0xE9;
-    *(uint32_t*)(patch_nearplayer_jmp_four+1) = 0x81;
+    uint32_t vehicle_restore_hook = server_srv + 0x00BDCED7;
+    offset = (uint32_t)HooksSynergy::VehicleInitializeRestore - vehicle_restore_hook - 5;
+    *(uint32_t*)(vehicle_restore_hook+1) = offset;
 
     //CMessageEntity
     uint32_t remove_extra_call = server_srv + 0x0070715B;
@@ -231,6 +233,103 @@ uint32_t HooksSynergy::ReallocHook(uint32_t old_ptr, uint32_t new_size)
     if(new_size <= 0) return (uint32_t)realloc((void*)old_ptr, new_size);
 
     return (uint32_t)realloc((void*)old_ptr, new_size*1.2);
+}
+
+void RemoveDanglingRestoredVehicles()
+{
+    Value* first_vehicle = *dangling_restore_vehicles;
+
+    while(first_vehicle)
+    {
+        Value* next_vehicle = first_vehicle->nextVal;
+
+        rootconsole->ConsolePrint("Removed dangling vehicle!");
+
+        RemoveEntityNormal(functions.GetCBaseEntity((uint32_t)first_vehicle->value), true);
+
+        free(first_vehicle);
+        first_vehicle = next_vehicle;
+    }
+
+    *dangling_restore_vehicles = NULL;
+}
+
+void EnterRestoredVehicles()
+{
+    pThreeArgProt pDynamicThreeArgFunc;
+    Value* first_player = *restore_vehicle_list;
+
+    while(first_player && first_player->nextVal)
+    {
+        uint32_t player = functions.GetCBaseEntity((uint32_t)first_player->value);
+        uint32_t vehicle = functions.GetCBaseEntity((uint32_t)first_player->nextVal->value);
+
+        if(IsEntityValid(player) && IsEntityValid(vehicle))
+        {
+            rootconsole->ConsolePrint("Vehicle Entered!");
+
+            //EnterVehicle
+            pDynamicThreeArgFunc = (pThreeArgProt)( *(uint32_t*) ((*(uint32_t*)(player))+0x644) );
+            pDynamicThreeArgFunc(player, *(uint32_t*)(vehicle+0x674), 0);
+        }
+
+        Value* nextPlayer = first_player->nextVal->nextVal;
+
+        free(first_player->nextVal);
+        free(first_player);
+
+        first_player = nextPlayer;
+    }
+
+    *restore_vehicle_list = NULL;
+}
+
+uint32_t HooksSynergy::VehicleInitializeRestore(uint32_t arg0, uint32_t arg1, uint32_t arg2)
+{
+    pThreeArgProt pDynamicThreeArgFunc;
+
+    uint32_t vehi_cbase = arg0-0x4CC;
+    uint32_t vehi_refhandle = *(uint32_t*)(vehi_cbase+offsets.refhandle_offset);
+
+    if(global_restore_player)
+    {
+        Value* player_value = CreateNewValue((void*)global_restore_player);
+        Value* vehicle_value = CreateNewValue((void*)vehi_refhandle);
+
+        InsertToValuesList(restore_vehicle_list, player_value, NULL, true, false);
+        InsertToValuesList(restore_vehicle_list, vehicle_value, NULL, true, false);
+
+        global_restore_player = 0;
+    }
+    else
+    {
+        uint32_t vehicle_refhandle = *(uint32_t*)(vehi_cbase+offsets.refhandle_offset);
+
+        Value* dangling_vehicle = CreateNewValue((void*)vehicle_refhandle);
+        InsertToValuesList(dangling_restore_vehicles, dangling_vehicle, NULL, false, false);
+    }
+
+    pDynamicThreeArgFunc = (pThreeArgProt)(server_srv + 0x0068DC60);
+    return pDynamicThreeArgFunc(arg0, arg1, arg2);
+}
+
+uint32_t HooksSynergy::RestorePlayerHook(uint32_t arg0, uint32_t arg1)
+{
+    pTwoArgProt pDynamicTwoArgProt;
+    pThreeArgProt pDynamicThreeArgFunc;
+
+    global_restore_player = *(uint32_t*)(arg1+offsets.refhandle_offset);
+
+    pDynamicTwoArgProt = (pTwoArgProt)(server_srv + 0x00BDC650);
+    uint32_t returnVal = pDynamicTwoArgProt(arg0, arg1);
+
+    Vector emptyVector;
+
+    //LeaveVehicle
+    pDynamicThreeArgFunc = (pThreeArgProt)( *(uint32_t*) ((*(uint32_t*)(arg1))+0x648) );
+    pDynamicThreeArgFunc(arg1, (uint32_t)&emptyVector, (uint32_t)&emptyVector);
+
+    return returnVal;
 }
 
 uint32_t HooksSynergy::DirectMallocHookDedicatedSrv(uint32_t arg0)
@@ -344,6 +443,9 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     functions.CleanupDeleteList(0);
     
     RemoveBadEnts();
+    RemoveDanglingRestoredVehicles();
+    EnterRestoredVehicles();
+    SpawnPlayers();
     UpdateAllCollisions();
 
     functions.CleanupDeleteList(0);
@@ -405,4 +507,5 @@ uint32_t HooksSynergy::AutosaveHook(uint32_t arg0)
 void HookFunctionsSynergy()
 {
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00BEC530), (void*)HooksSynergy::AutosaveHook);
+    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00BDC650), (void*)HooksSynergy::RestorePlayerHook);
 }
