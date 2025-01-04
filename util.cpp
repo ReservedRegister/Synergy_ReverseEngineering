@@ -38,8 +38,6 @@ uint32_t sdktools_size;
 
 bool isTicking;
 bool server_sleeping;
-int hooked_delete_counter;
-int normal_delete_counter;
 uint32_t global_vpk_cache_buffer;
 uint32_t current_vpk_buffer_ref;
 
@@ -53,8 +51,6 @@ void InitUtil()
     player_collision_rules_changed = false;
     player_worldspawn_collision_disabled = false;
     isTicking = false;
-    hooked_delete_counter = 0;
-    normal_delete_counter = 0;
     server_sleeping = false;
     global_vpk_cache_buffer = (uint32_t)malloc(0x00100000);
     current_vpk_buffer_ref = 0;
@@ -245,11 +241,6 @@ uint32_t HooksUtil::UpdateOnRemove(uint32_t arg0)
     pOneArgProt pDynamicOneArgFunc;
 
     char* classname = (char*)(*(uint32_t*)(arg0+offsets.classname_offset));
-
-    if(*(uint32_t*)(fields.RemoveImmediateSemaphore) != 0)
-        normal_delete_counter++;
-
-    //rootconsole->ConsolePrint("normal counter: [%d] [%d] [%s]", normal_delete_counter, hooked_delete_counter, classname);
 
     pDynamicOneArgFunc = (pOneArgProt)(functions.UpdateOnRemoveBase);
     return pDynamicOneArgFunc(arg0);
@@ -1001,12 +992,6 @@ void RemoveEntityNormal(uint32_t entity_object, bool validate)
         if(IsMarkedForDeletion(object_verify+offsets.iserver_offset)) return;
 
         functions.RemoveNormal(object_verify);
-
-        if(IsMarkedForDeletion(object_verify+offsets.iserver_offset))
-        {
-            if(*(uint32_t*)(fields.RemoveImmediateSemaphore) != 0)
-                hooked_delete_counter++;
-        }
 
         //rootconsole->ConsolePrint("Removed [%s]", clsname);
 

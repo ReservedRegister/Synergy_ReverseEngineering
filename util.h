@@ -161,8 +161,6 @@ extern uint32_t sdktools_size;
 
 extern bool isTicking;
 extern bool server_sleeping;
-extern int hooked_delete_counter;
-extern int normal_delete_counter;
 extern uint32_t global_vpk_cache_buffer;
 extern uint32_t current_vpk_buffer_ref;
 extern ValueList leakedResourcesVpkSystem;

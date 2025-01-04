@@ -5,8 +5,10 @@ bool InitExtensionSynergy();
 void ApplyPatchesSynergy();
 void HookFunctionsSynergy();
 
+uint32_t GetPassengerIndex(uint32_t player, uint32_t player_vehicle);
+void MakePlayersLeaveVehicles();
 void RemoveDanglingRestoredVehicles();
-void EnterRestoredVehicles();
+void EnterVehicles();
 
 class HooksSynergy
 {

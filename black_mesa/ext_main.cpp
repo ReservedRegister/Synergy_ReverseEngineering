@@ -167,8 +167,9 @@ void ApplyPatchesBlackMesa()
     *(uint8_t*)(fix_vphysics_destructor) = 0xEB;
 
     //CMessageEntity
-    uint32_t bad_call_remove = server_srv + 0x008BB59A;
-    memset((void*)bad_call_remove, 0x90, 5);
+    uint32_t remove_extra_call = server_srv + 0x008BB59A;
+    offset = (uint32_t)HooksUtil::EmptyCall - remove_extra_call - 5;
+    *(uint32_t*)(remove_extra_call+1) = offset;
 }
 
 void HookFunctionsBlackMesa()
@@ -408,17 +409,6 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
 
     functions.CleanupDeleteList(0);
 
-    if(hooked_delete_counter == normal_delete_counter)
-    {
-        hooked_delete_counter = 0;
-        normal_delete_counter = 0;
-    }
-    else
-    {
-        rootconsole->ConsolePrint("Critical error - entity count mismatch!");
-        exit(EXIT_FAILURE);
-    }
-
     uint32_t firstPlayer = functions.FindEntityByClassname(fields.CGlobalEntityList, 0, (uint32_t)"player");
 
     if(!firstPlayer)
@@ -433,8 +423,6 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
     RemoveBadEnts();
 
     SpawnPlayers();
-    FixPlayerCollisionGroup();
-    DisablePlayerWorldSpawnCollision();
 
     RemoveBadEnts();
 
@@ -466,6 +454,12 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
     pDynamicOneArgFunc(0);
 
     functions.CleanupDeleteList(0);
+
+    RemoveBadEnts();
+
+    SpawnPlayers();
+    FixPlayerCollisionGroup();
+    DisablePlayerWorldSpawnCollision();
 
     RemoveBadEnts();
 

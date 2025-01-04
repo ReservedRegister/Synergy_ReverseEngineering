@@ -7,6 +7,7 @@
 uint32_t global_restore_player;
 ValueList restore_vehicle_list;
 ValueList dangling_restore_vehicles;
+ValueList save_player_vehicles_list;
 
 bool InitExtensionSynergy()
 {
@@ -76,6 +77,7 @@ bool InitExtensionSynergy()
     global_restore_player = 0;
     restore_vehicle_list = AllocateValuesList();
     dangling_restore_vehicles = AllocateValuesList();
+    save_player_vehicles_list = AllocateValuesList();
 
     fields.CGlobalEntityList = server_srv + 0x00EAB5BC;
     fields.sv = engine_srv + 0x00394538;
@@ -176,12 +178,23 @@ void ApplyPatchesSynergy()
     offset = (uint32_t)HooksUtil::EmptyCall - hook_service_event_queue - 5;
     *(uint32_t*)(hook_service_event_queue+1) = offset;
 
+    uint32_t nearplayer_bypass = server_srv + 0x00C2AE3C;
+    *(uint8_t*)(nearplayer_bypass) = 0xE9;
+    *(uint32_t*)(nearplayer_bypass+1) = 0x1A9;
+
+    //spawning crash
+    uint32_t patch_player_spawn_crash = server_srv + 0x00C2F28C;
+    *(uint8_t*)(patch_player_spawn_crash) = 0xEB;
+
+    //spawning crash
     uint32_t patch_player_restore = server_srv + 0x00BDD0CC;
     memset((void*)patch_player_restore, 0x90, 0x26);
 
+    //player vehicle restoring patch
     uint32_t removebad_restorecode = server_srv + 0x00BDCEED;
     memset((void*)removebad_restorecode, 0x90, 2);
 
+    //player vehicle restoring patch
     uint32_t vehicle_restore_hook = server_srv + 0x00BDCED7;
     offset = (uint32_t)HooksSynergy::VehicleInitializeRestore - vehicle_restore_hook - 5;
     *(uint32_t*)(vehicle_restore_hook+1) = offset;
@@ -235,6 +248,89 @@ uint32_t HooksSynergy::ReallocHook(uint32_t old_ptr, uint32_t new_size)
     return (uint32_t)realloc((void*)old_ptr, new_size*1.2);
 }
 
+uint32_t GetPassengerIndex(uint32_t player, uint32_t player_vehicle)
+{
+    pOneArgProt pDynamicOneArgFunc;
+    pTwoArgProt pDynamicTwoArgFunc;
+
+    if(IsEntityValid(player) && IsEntityValid(player_vehicle))
+    {
+        char* vehicle_classname = (char*)(*(uint32_t*)(player_vehicle+offsets.classname_offset));
+
+        if((vehicle_classname && strcmp(vehicle_classname, "prop_vehicle_airboat")) == 0
+            ||
+        (vehicle_classname && strcmp(vehicle_classname, "prop_vehicle_mp")) == 0
+            ||
+        (vehicle_classname && strncmp(vehicle_classname, "prop_vehicle_jeep", 17)) == 0)
+        {
+            uint32_t iserver_vehicle = *(uint32_t*)(player_vehicle+0x674);
+            uint32_t base_vehicle = *(uint32_t*)(iserver_vehicle+0x30);
+
+            //GetPassengerCount
+            pDynamicOneArgFunc = (pOneArgProt)(*(uint32_t*)((*(uint32_t*)(base_vehicle))+0x4C));
+            uint32_t passengers = pDynamicOneArgFunc(base_vehicle);
+
+            for(uint32_t i = 0; i < passengers; i++)
+            {
+                pDynamicTwoArgFunc = (pTwoArgProt)(*(uint32_t*)(*(uint32_t*)(iserver_vehicle)));
+                uint32_t passenger = pDynamicTwoArgFunc(iserver_vehicle, i);
+
+                if(IsEntityValid(passenger))
+                {
+                    if(passenger == player)
+                        return i;
+                }
+            }
+        }
+        else
+            return -1;
+    }
+
+    rootconsole->ConsolePrint("Failed to get passenger index!");
+    return 0;
+}
+
+void MakePlayersLeaveVehicles()
+{
+    pOneArgProt pDynamicOneArgFunc;
+    pTwoArgProt pDynamicTwoArgFunc;
+    pThreeArgProt pDynamicThreeArgFunc;
+    uint32_t player = 0;
+
+    while((player = functions.FindEntityByClassname(fields.CGlobalEntityList, player, (uint32_t)"player")) != 0)
+    {
+        if(IsEntityValid(player))
+        {
+            Vector emptyVector;
+            uint32_t player_vehicle = functions.GetCBaseEntity(*(uint32_t*)(player+0x0D38));
+
+            if(IsEntityValid(player_vehicle))
+            {
+                char* vehicle_classname = (char*)(*(uint32_t*)(player_vehicle+offsets.classname_offset));
+                uint32_t passenger = GetPassengerIndex(player, player_vehicle);
+
+                if(passenger != -1u)
+                {
+                    Value* player_value = CreateNewValue((void*)*(uint32_t*)(player+offsets.refhandle_offset));
+                    Value* vehicle_value = CreateNewValue((void*)*(uint32_t*)(player_vehicle+offsets.refhandle_offset));
+                    Value* passenger_value = CreateNewValue((void*)passenger);
+
+                    InsertToValuesList(save_player_vehicles_list, player_value, NULL, true, false);
+                    InsertToValuesList(save_player_vehicles_list, vehicle_value, NULL, true, false);
+                    InsertToValuesList(save_player_vehicles_list, passenger_value, NULL, true, false);
+                }
+
+                if(strcmp(vehicle_classname, "prop_vehicle_airboat") != 0)
+                {
+                    //LeaveVehicle
+                    pDynamicThreeArgFunc = (pThreeArgProt)( *(uint32_t*) ((*(uint32_t*)(player))+0x648) );
+                    pDynamicThreeArgFunc(player, (uint32_t)&emptyVector, (uint32_t)&emptyVector);
+                }
+            }
+        }
+    }
+}
+
 void RemoveDanglingRestoredVehicles()
 {
     Value* first_vehicle = *dangling_restore_vehicles;
@@ -254,34 +350,36 @@ void RemoveDanglingRestoredVehicles()
     *dangling_restore_vehicles = NULL;
 }
 
-void EnterRestoredVehicles()
+void EnterVehicles(ValueList vehi_list)
 {
     pThreeArgProt pDynamicThreeArgFunc;
-    Value* first_player = *restore_vehicle_list;
+    Value* first_player = *vehi_list;
 
-    while(first_player && first_player->nextVal)
+    while(first_player && first_player->nextVal && first_player->nextVal->nextVal)
     {
         uint32_t player = functions.GetCBaseEntity((uint32_t)first_player->value);
         uint32_t vehicle = functions.GetCBaseEntity((uint32_t)first_player->nextVal->value);
+        uint32_t passenger = (uint32_t)first_player->nextVal->nextVal->value;
 
         if(IsEntityValid(player) && IsEntityValid(vehicle))
         {
-            rootconsole->ConsolePrint("Vehicle Entered!");
+            rootconsole->ConsolePrint("Vehicle Entered! passenger [%d]", passenger);
 
             //EnterVehicle
             pDynamicThreeArgFunc = (pThreeArgProt)( *(uint32_t*) ((*(uint32_t*)(player))+0x644) );
-            pDynamicThreeArgFunc(player, *(uint32_t*)(vehicle+0x674), 0);
+            pDynamicThreeArgFunc(player, *(uint32_t*)(vehicle+0x674), passenger);
         }
 
-        Value* nextPlayer = first_player->nextVal->nextVal;
+        Value* nextPlayer = first_player->nextVal->nextVal->nextVal;
 
+        free(first_player->nextVal->nextVal);
         free(first_player->nextVal);
         free(first_player);
 
         first_player = nextPlayer;
     }
 
-    *restore_vehicle_list = NULL;
+    *vehi_list = NULL;
 }
 
 uint32_t HooksSynergy::VehicleInitializeRestore(uint32_t arg0, uint32_t arg1, uint32_t arg2)
@@ -293,11 +391,18 @@ uint32_t HooksSynergy::VehicleInitializeRestore(uint32_t arg0, uint32_t arg1, ui
 
     if(global_restore_player)
     {
-        Value* player_value = CreateNewValue((void*)global_restore_player);
-        Value* vehicle_value = CreateNewValue((void*)vehi_refhandle);
+        uint32_t passenger = GetPassengerIndex(functions.GetCBaseEntity(global_restore_player), vehi_cbase);
 
-        InsertToValuesList(restore_vehicle_list, player_value, NULL, true, false);
-        InsertToValuesList(restore_vehicle_list, vehicle_value, NULL, true, false);
+        if(passenger != -1u)
+        {
+            Value* player_value = CreateNewValue((void*)global_restore_player);
+            Value* vehicle_value = CreateNewValue((void*)vehi_refhandle);
+            Value* passenger_value = CreateNewValue((void*)passenger);
+
+            InsertToValuesList(restore_vehicle_list, player_value, NULL, true, false);
+            InsertToValuesList(restore_vehicle_list, vehicle_value, NULL, true, false);
+            InsertToValuesList(restore_vehicle_list, passenger_value, NULL, true, false);
+        }
 
         global_restore_player = 0;
     }
@@ -315,13 +420,13 @@ uint32_t HooksSynergy::VehicleInitializeRestore(uint32_t arg0, uint32_t arg1, ui
 
 uint32_t HooksSynergy::RestorePlayerHook(uint32_t arg0, uint32_t arg1)
 {
-    pTwoArgProt pDynamicTwoArgProt;
+    pTwoArgProt pDynamicTwoArgFunc;
     pThreeArgProt pDynamicThreeArgFunc;
 
     global_restore_player = *(uint32_t*)(arg1+offsets.refhandle_offset);
 
-    pDynamicTwoArgProt = (pTwoArgProt)(server_srv + 0x00BDC650);
-    uint32_t returnVal = pDynamicTwoArgProt(arg0, arg1);
+    pDynamicTwoArgFunc = (pTwoArgProt)(server_srv + 0x00BDC650);
+    uint32_t returnVal = pDynamicTwoArgFunc(arg0, arg1);
 
     Vector emptyVector;
 
@@ -408,19 +513,6 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
 
     functions.CleanupDeleteList(0);
 
-    if(hooked_delete_counter == normal_delete_counter)
-    {
-        hooked_delete_counter = 0;
-        normal_delete_counter = 0;
-    }
-    else
-    {
-
-        rootconsole->ConsolePrint("Final counter: [%d] [%d]", normal_delete_counter, hooked_delete_counter);
-        rootconsole->ConsolePrint("Critical error - entity count mismatch!");
-        exit(EXIT_FAILURE);
-    }
-
     uint32_t firstplayer = functions.FindEntityByClassname(fields.CGlobalEntityList, 0, (uint32_t)"player");
 
     if(!firstplayer)
@@ -433,9 +525,7 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     }
 
     RemoveBadEnts();
-    
-    RemoveDanglingRestoredVehicles();
-    EnterRestoredVehicles();
+
     SpawnPlayers();
 
     RemoveBadEnts();
@@ -485,6 +575,8 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     {
         rootconsole->ConsolePrint("Saving game!");
 
+        MakePlayersLeaveVehicles();
+
         functions.CleanupDeleteList(0);
 
         //Autosave_Silent
@@ -493,8 +585,16 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
 
         functions.CleanupDeleteList(0);
 
+        EnterVehicles(save_player_vehicles_list);
+
         savegame = false;
     }
+
+    RemoveBadEnts();
+
+    RemoveDanglingRestoredVehicles();
+    EnterVehicles(restore_vehicle_list);
+    SpawnPlayers();
 
     RemoveBadEnts();
     
