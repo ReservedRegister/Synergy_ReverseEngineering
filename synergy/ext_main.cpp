@@ -320,12 +320,9 @@ void MakePlayersLeaveVehicles()
                     InsertToValuesList(save_player_vehicles_list, passenger_value, NULL, true, false);
                 }
 
-                if(strcmp(vehicle_classname, "prop_vehicle_airboat") != 0)
-                {
-                    //LeaveVehicle
-                    pDynamicThreeArgFunc = (pThreeArgProt)( *(uint32_t*) ((*(uint32_t*)(player))+0x648) );
-                    pDynamicThreeArgFunc(player, (uint32_t)&emptyVector, (uint32_t)&emptyVector);
-                }
+                //LeaveVehicle
+                pDynamicThreeArgFunc = (pThreeArgProt)( *(uint32_t*) ((*(uint32_t*)(player))+0x648) );
+                pDynamicThreeArgFunc(player, (uint32_t)&emptyVector, (uint32_t)&emptyVector);
             }
         }
     }

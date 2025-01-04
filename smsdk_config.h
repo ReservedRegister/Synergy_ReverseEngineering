@@ -40,7 +40,7 @@
 /* Basic information exposed publicly */
 #define SMEXT_CONF_NAME			"ServerUtils"
 #define SMEXT_CONF_DESCRIPTION	"Extension to fix issues with dedicated server"
-#define SMEXT_CONF_VERSION		"270 - Black Mesa Necro Patch - Synergy 24.12.2"
+#define SMEXT_CONF_VERSION		"271 - Black Mesa Necro Patch - Synergy 24.12.2"
 #define SMEXT_CONF_AUTHOR		"ReservedRegister"
 #define SMEXT_CONF_URL			"http://www.sourcemod.net/"
 #define SMEXT_CONF_LOGTAG		"SERVER_UTILS"
