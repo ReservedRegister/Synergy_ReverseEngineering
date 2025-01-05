@@ -4,6 +4,8 @@
 #include "ext_main.h"
 #include "hooks_specific.h"
 
+int save_frames;
+bool saving_now;
 uint32_t global_restore_player;
 ValueList restore_vehicle_list;
 ValueList dangling_restore_vehicles;
@@ -74,6 +76,8 @@ bool InitExtensionSynergy()
     RestoreLinkedLists();
     SaveProcessId();
 
+    save_frames = 0;
+    saving_now = false;
     global_restore_player = 0;
     restore_vehicle_list = AllocateValuesList();
     dangling_restore_vehicles = AllocateValuesList();
@@ -502,6 +506,10 @@ uint32_t HooksSynergy::DirectMallocHookDedicatedSrv(uint32_t arg0)
 uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
 {
     isTicking = true;
+    save_frames++;
+
+    if(save_frames > 1000)
+        save_frames = 0;
 
     pOneArgProt pDynamicOneArgFunc;
 
@@ -523,7 +531,36 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
 
     RemoveBadEnts();
 
+    if(savegame)
+    {
+        rootconsole->ConsolePrint("Saving game!");
+
+        save_frames = 0;
+
+        MakePlayersLeaveVehicles();
+
+        functions.CleanupDeleteList(0);
+
+        saving_now = true;
+
+        //Autosave_Silent
+        pDynamicFastCallOneArgFunc = (pOneArgProtFastCall)(server_srv + 0x00BEC530);
+        pDynamicFastCallOneArgFunc(0);
+
+        saving_now = false;
+
+        functions.CleanupDeleteList(0);
+
+        EnterVehicles(save_player_vehicles_list);
+
+        savegame = false;
+    }
+
+    RemoveBadEnts();
+
     SpawnPlayers();
+    RemoveDanglingRestoredVehicles();
+    EnterVehicles(restore_vehicle_list);
 
     RemoveBadEnts();
 
@@ -544,12 +581,6 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     pDynamicFastCallTwoArgFunc = (pTwoArgProtFastCall)(server_srv + 0x006E6080);
     pDynamicFastCallTwoArgFunc(0x2D, 0);
 
-    functions.CleanupDeleteList(0);
-    
-    RemoveBadEnts();
-
-    functions.CleanupDeleteList(0);
-
     //PostSystems
     pDynamicFastCallTwoArgFunc = (pTwoArgProtFastCall)(server_srv + 0x006E6350);
     pDynamicFastCallTwoArgFunc(0x41, 0);
@@ -565,33 +596,6 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     pDynamicOneArgFunc(server_srv + 0x00EA2570);
 
     functions.CleanupDeleteList(0);
-    
-    RemoveBadEnts();
-
-    if(savegame)
-    {
-        rootconsole->ConsolePrint("Saving game!");
-
-        MakePlayersLeaveVehicles();
-
-        functions.CleanupDeleteList(0);
-
-        //Autosave_Silent
-        pDynamicFastCallOneArgFunc = (pOneArgProtFastCall)(server_srv + 0x00BEC530);
-        pDynamicFastCallOneArgFunc(0);
-
-        functions.CleanupDeleteList(0);
-
-        EnterVehicles(save_player_vehicles_list);
-
-        savegame = false;
-    }
-
-    RemoveBadEnts();
-
-    RemoveDanglingRestoredVehicles();
-    EnterVehicles(restore_vehicle_list);
-    SpawnPlayers();
 
     RemoveBadEnts();
     
@@ -604,8 +608,25 @@ uint32_t HooksSynergy::AutosaveHook(uint32_t arg0)
     return 0;
 }
 
+uint32_t HooksSynergy::fix_wheels_hook(uint32_t arg0, uint32_t arg1, uint32_t arg2)
+{
+    pThreeArgProt pDynamicThreeArgFunc;
+
+    if(save_frames < 30)
+    {
+        rootconsole->ConsolePrint("Prevented vehicle exit!");
+        return 0;
+    }
+
+    //rootconsole->ConsolePrint("Allowed usage!");
+    
+    pDynamicThreeArgFunc = (pThreeArgProt)(vphysics_srv + 0x000DC6F0);
+    return pDynamicThreeArgFunc(arg0, arg1, arg2);
+}
+
 void HookFunctionsSynergy()
 {
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00BEC530), (void*)HooksSynergy::AutosaveHook);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00BDC650), (void*)HooksSynergy::RestorePlayerHook);
+    HookFunction(vphysics_srv, vphysics_srv_size, (void*)(vphysics_srv + 0x000DC6F0), (void*)HooksSynergy::fix_wheels_hook);
 }

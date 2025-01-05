@@ -88,23 +88,6 @@ void SpawnPlayers()
 
         if(IsEntityValid(player))
         {
-            rootconsole->ConsolePrint("Spawned player");
-
-            if(game == SYNERGY)
-            {
-                rootconsole->ConsolePrint("Exit Vehicle");
-                
-                Vector emptyVector;
-
-                uint32_t player_vehicle_refhandle = *(uint32_t*)(player+0x0D38);
-
-                //LeaveVehicle
-                pDynamicThreeArgFunc = (pThreeArgProt)( *(uint32_t*) ((*(uint32_t*)(player))+0x648) );
-                pDynamicThreeArgFunc(player, (uint32_t)&emptyVector, (uint32_t)&emptyVector);
-
-                RemoveEntityNormal(functions.GetCBaseEntity(player_vehicle_refhandle), true);
-            }
-
             functions.CleanupDeleteList(0);
 
             functions.SpawnPlayer(player);
@@ -205,9 +188,6 @@ uint32_t HooksUtil::PlayerSpawnHook(uint32_t arg0)
     pOneArgProt pDynamicOneArgFunc;
 
     uint32_t refHandle = *(uint32_t*)(arg0+offsets.refhandle_offset);
-
-    Value* new_player_spawn = CreateNewValue((void*)refHandle);
-    InsertToValuesList(player_spawn_list, new_player_spawn, NULL, false, false);
 
     pDynamicOneArgFunc = (pOneArgProt)(functions.SpawnPlayer);
     return pDynamicOneArgFunc(arg0);
@@ -738,7 +718,7 @@ bool IsEntityPositionReasonable(uint32_t v)
     float y = *(float*)(v+4);
     float z = *(float*)(v+8);
 
-    float r = 16384.0f;
+    float r = 32767.0f;
 
     return
         x > -r && x < r &&
@@ -978,11 +958,19 @@ void RemoveEntityNormal(uint32_t entity_object, bool validate)
         {
             if(isTicking)
             {
-                Value* new_player_spawn = CreateNewValue((void*)refHandle);
-                InsertToValuesList(player_spawn_list, new_player_spawn, NULL, false, false);
+                Vector emptyVector;
 
-                Value* respawn_player = CreateNewValue((void*)refHandle);
-                InsertToValuesList(player_spawn_list, respawn_player, NULL, false, false);
+                //LeaveVehicle
+                pDynamicThreeArgFunc = (pThreeArgProt)( *(uint32_t*) ((*(uint32_t*)(object_verify))+0x648) );
+                pDynamicThreeArgFunc(object_verify, (uint32_t)&emptyVector, (uint32_t)&emptyVector);
+
+                functions.SpawnPlayer(object_verify);
+
+                //LeaveVehicle
+                pDynamicThreeArgFunc = (pThreeArgProt)( *(uint32_t*) ((*(uint32_t*)(object_verify))+0x648) );
+                pDynamicThreeArgFunc(object_verify, (uint32_t)&emptyVector, (uint32_t)&emptyVector);
+
+                functions.SpawnPlayer(object_verify);
 
                 rootconsole->ConsolePrint("Tried killing player but was protected & respawned!");
                 return;
@@ -990,6 +978,19 @@ void RemoveEntityNormal(uint32_t entity_object, bool validate)
         }
 
         if(IsMarkedForDeletion(object_verify+offsets.iserver_offset)) return;
+
+        if(game == SYNERGY)
+        {
+            //Synergy
+            extern bool saving_now;
+
+            if(saving_now)
+            {
+                InstaKill(object_verify, true);
+                rootconsole->ConsolePrint("WARNING: Removing [%s] while a save file is being made!", classname);
+                return;
+            }
+        }
 
         functions.RemoveNormal(object_verify);
 
