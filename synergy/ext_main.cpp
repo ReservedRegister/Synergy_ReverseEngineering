@@ -26,24 +26,27 @@ bool InitExtensionSynergy()
     const size_t max_path_length = 1024;
 
     char server_srv_fullpath[max_path_length];
+    char synergy_srv_fullpath[max_path_length];
     char engine_srv_fullpath[max_path_length];
     char dedicated_srv_fullpath[max_path_length];
     char vphysics_srv_fullpath[max_path_length];
     char sdktools_path[max_path_length];
 
     snprintf(server_srv_fullpath, max_path_length, "/synergy/bin/server_srv.so");
+    snprintf(synergy_srv_fullpath, max_path_length, "/synergy/bin/synergy_srv.so");
     snprintf(engine_srv_fullpath, max_path_length, "/bin/engine_srv.so");
     snprintf(dedicated_srv_fullpath, max_path_length, "/bin/dedicated_srv.so");
     snprintf(vphysics_srv_fullpath, max_path_length, "/bin/vphysics_srv.so");
     snprintf(sdktools_path, max_path_length, "/extensions/sdktools.ext.2.sdk2013.so");
 
     Library* server_srv_lib = FindLibrary(server_srv_fullpath, true);
+    Library* synergy_srv_lib = FindLibrary(synergy_srv_fullpath, true);
     Library* engine_srv_lib = FindLibrary(engine_srv_fullpath, true);
     Library* dedicated_srv_lib = FindLibrary(dedicated_srv_fullpath, true);
     Library* vphysics_srv_lib = FindLibrary(vphysics_srv_fullpath, true);
     Library* sdktools_lib = FindLibrary(sdktools_path, true);
 
-    if(!(engine_srv_lib && dedicated_srv_lib && vphysics_srv_lib && server_srv_lib && sdktools_lib))
+    if(!(engine_srv_lib && dedicated_srv_lib && vphysics_srv_lib && server_srv_lib && synergy_srv_lib && sdktools_lib))
     {
         RestoreMemoryProtections();
         ClearLoadedLibraries();
@@ -54,18 +57,21 @@ bool InitExtensionSynergy()
     game = SYNERGY;
 
     rootconsole->ConsolePrint("server_srv_lib [%X] size [%X]", server_srv_lib->library_base_address, server_srv_lib->library_size);
+    rootconsole->ConsolePrint("synergy_srv_lib [%X] size [%X]", synergy_srv_lib->library_base_address, synergy_srv_lib->library_size);
     rootconsole->ConsolePrint("engine_srv_lib [%X] size [%X]", engine_srv_lib->library_base_address, engine_srv_lib->library_size);
     rootconsole->ConsolePrint("dedicated_srv_lib [%X] size [%X]", dedicated_srv_lib->library_base_address, dedicated_srv_lib->library_size);
     rootconsole->ConsolePrint("vphysics_srv_lib [%X] size [%X]", vphysics_srv_lib->library_base_address, vphysics_srv_lib->library_size);
     rootconsole->ConsolePrint("sdktools_lib [%X] size [%X]", sdktools_lib->library_base_address, sdktools_lib->library_size);
 
     server_srv = server_srv_lib->library_base_address;
+    synergy_srv = synergy_srv_lib->library_base_address;
     engine_srv = engine_srv_lib->library_base_address;
     dedicated_srv = dedicated_srv_lib->library_base_address;
     vphysics_srv = vphysics_srv_lib->library_base_address;
     sdktools = sdktools_lib->library_base_address;
 
     server_srv_size = server_srv_lib->library_size;
+    synergy_srv_size = synergy_srv_lib->library_size;
     engine_srv_size = engine_srv_lib->library_size;
     dedicated_srv_size = dedicated_srv_lib->library_size;
     vphysics_srv_size = vphysics_srv_lib->library_size;
@@ -509,7 +515,7 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     save_frames++;
 
     if(save_frames > 1000)
-        save_frames = 0;
+        save_frames = 100;
 
     pOneArgProt pDynamicOneArgFunc;
 
@@ -628,5 +634,8 @@ void HookFunctionsSynergy()
 {
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00BEC530), (void*)HooksSynergy::AutosaveHook);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00BDC650), (void*)HooksSynergy::RestorePlayerHook);
+    HookFunction(synergy_srv, synergy_srv_size, (void*)(synergy_srv + 0x000647A0), (void*)HooksUtil::EmptyCall);
+    HookFunction(synergy_srv, synergy_srv_size, (void*)(synergy_srv + 0x00065910), (void*)HooksUtil::EmptyCall);
+
     HookFunction(vphysics_srv, vphysics_srv_size, (void*)(vphysics_srv + 0x000DC6F0), (void*)HooksSynergy::fix_wheels_hook);
 }

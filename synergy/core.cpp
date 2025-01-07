@@ -3,6 +3,9 @@
 #include "core.h"
 #include "ext_main.h"
 
+uint32_t synergy_srv;
+uint32_t synergy_srv_size;
+
 ValueList leakedResourcesSaveRestoreSystem;
 ValueList leakedResourcesEdtSystem;
 
@@ -26,7 +29,10 @@ void InitCoreSynergy()
     snprintf((char*)our_libraries[3], 1024, "%s", "/bin/vphysics_srv.so");
 
     our_libraries[4] = (uint32_t)malloc(1024);
-    snprintf((char*)our_libraries[4], 1024, "%s", "/extensions/sdktools.ext.2.sdk2013.so");
+    snprintf((char*)our_libraries[4], 1024, "%s", "/synergy/bin/synergy_srv.so");
+
+    our_libraries[5] = (uint32_t)malloc(1024);
+    snprintf((char*)our_libraries[5], 1024, "%s", "/extensions/sdktools.ext.2.sdk2013.so");
 }
 
 bool IsAllowedToPatchSdkTools(uint32_t lib_base, uint32_t lib_size)

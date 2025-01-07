@@ -4,6 +4,9 @@
 #define HOOK_MSG "Saved memory reference to leaked resources list: [%X]"
 #define EXT_PREFIX "[SynergyUtils] "
 
+extern uint32_t synergy_srv;
+extern uint32_t synergy_srv_size;
+
 extern ValueList leakedResourcesSaveRestoreSystem;
 extern ValueList leakedResourcesEdtSystem;
 
