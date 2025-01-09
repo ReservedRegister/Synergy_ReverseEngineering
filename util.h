@@ -10,6 +10,12 @@ class HooksUtil
 {
 public:
 	static uint32_t EmptyCall();
+	static uint32_t CallocHook(uint32_t nitems, uint32_t size);
+	static uint32_t MallocHookSmall(uint32_t size);
+	static uint32_t MallocHookLarge(uint32_t size);
+	static uint32_t OperatorNewHook(uint32_t size);
+	static uint32_t OperatorNewArrayHook(uint32_t size);
+	static uint32_t ReallocHook(uint32_t old_ptr, uint32_t new_size);
 	static uint32_t CreateEntityByNameHook(uint32_t arg0, uint32_t arg1);
 	static uint32_t PhysSimEnt(uint32_t arg0);
 	static uint32_t HookInstaKill(uint32_t arg0);
@@ -201,5 +207,6 @@ EntityKV* CreateNewEntityKV(uint32_t refHandle, uint32_t keyIn, uint32_t valueIn
 void InsertEntityToCollisionsList(uint32_t ent);
 void DisablePlayerCollisions();
 void DisablePlayerWorldSpawnCollision();
+bool FixSlashes(char* string);
 
 #endif

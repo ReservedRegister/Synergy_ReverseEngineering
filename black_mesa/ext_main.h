@@ -10,10 +10,6 @@ class HooksBlackMesa
 {
 public:
 	static uint32_t SimulateEntitiesHook(uint32_t arg0);
-    static uint32_t CallocHook(uint32_t nitems, uint32_t size);
-    static uint32_t MallocHook(uint32_t size);
-    static uint32_t ReallocHook(uint32_t old_ptr, uint32_t new_size);
-    static uint32_t OperatorNewArrayHook(uint32_t size);
 	static uint32_t UTIL_GetLocalPlayerHook();
 	static uint32_t CXenShieldController_UpdateOnRemoveHook(uint32_t arg0);
 	static uint32_t InstaKillPatchHook(uint32_t arg0);

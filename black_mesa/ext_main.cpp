@@ -360,35 +360,6 @@ uint32_t HooksBlackMesa::InstaKillPatchHook(uint32_t arg0)
     return 0;
 }
 
-uint32_t HooksBlackMesa::CallocHook(uint32_t nitems, uint32_t size)
-{
-    if(nitems <= 0) return (uint32_t)calloc(nitems, size);
-    uint32_t enlarged_size = nitems*2.0;
-    uint32_t newRef = (uint32_t)calloc(enlarged_size, size);
-    return newRef;
-}
-
-uint32_t HooksBlackMesa::MallocHook(uint32_t size)
-{
-    if(size <= 0) return (uint32_t)malloc(size);
-    uint32_t newRef = (uint32_t)malloc(size*2.0);
-    return newRef;
-}
-
-uint32_t HooksBlackMesa::ReallocHook(uint32_t old_ptr, uint32_t new_size)
-{
-    if(new_size <= 0) return (uint32_t)realloc((void*)old_ptr, new_size);
-    uint32_t new_ref = (uint32_t)realloc((void*)old_ptr, new_size*2.0);
-    return new_ref;
-}
-
-uint32_t HooksBlackMesa::OperatorNewArrayHook(uint32_t size)
-{
-    if(size <= 0) return (uint32_t)malloc(size);
-    uint32_t newRef = (uint32_t)malloc(size*2.0);
-    return newRef;
-}
-
 uint32_t HooksBlackMesa::CXenShieldController_UpdateOnRemoveHook(uint32_t arg0)
 {
     pOneArgProt pDynamicOneArgFunc;
@@ -422,12 +393,6 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
 
     RemoveBadEnts();
 
-    SpawnPlayers();
-    FixPlayerCollisionGroup();
-    DisablePlayerWorldSpawnCollision();
-
-    RemoveBadEnts();
-
     functions.CleanupDeleteList(0);
 
     //SimulateEntities
@@ -437,6 +402,11 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
     functions.CleanupDeleteList(0);
 
     RemoveBadEnts();
+
+    SpawnPlayers();
+    FixPlayerCollisionGroup();
+    DisablePlayerWorldSpawnCollision();
+
     UpdateAllCollisions();
 
     functions.CleanupDeleteList(0);

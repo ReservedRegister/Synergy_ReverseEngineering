@@ -215,47 +215,33 @@ void ApplyPatchesSynergy()
     *(uint32_t*)(remove_extra_call+1) = offset;
 }
 
-uint32_t HooksSynergy::CallocHook(uint32_t nitems, uint32_t size)
+void FixCarSlashes()
 {
-    if(nitems <= 0) return (uint32_t)calloc(nitems, size);
+    uint32_t mainEnt = 0;
 
-    uint32_t enlarged_size = nitems*2.5;
-    return (uint32_t)calloc(enlarged_size, size);
-}
+    while((mainEnt = functions.FindEntityByClassname(fields.CGlobalEntityList, mainEnt, (uint32_t)"*")) != 0)
+    {
+        char* clsname = (char*) ( *(uint32_t*)(mainEnt+offsets.classname_offset) );
+        
+        if(strcmp(clsname, "prop_vehicle_jeep") != 0 && strcmp(clsname, "prop_vehicle_mp") != 0 && strcmp(clsname, "prop_vehicle_airboat") != 0)
+            continue;
 
-uint32_t HooksSynergy::MallocHookSmall(uint32_t size)
-{
-    if(size <= 0) return (uint32_t)malloc(size);
-    
-    return (uint32_t)malloc(size*1.2);
-}
+        uint32_t model = *(uint32_t*)(mainEnt+556);
+        uint32_t script = *(uint32_t*)(mainEnt+1544);
 
-uint32_t HooksSynergy::MallocHookLarge(uint32_t size)
-{
-    if(size <= 0) return (uint32_t)malloc(size);
+        bool fixed_model = FixSlashes((char*)model);
+        bool fixed_script = FixSlashes((char*)script);
 
-    return (uint32_t)malloc(size*2.2);
-}
+        if(fixed_model)
+        {
+            rootconsole->ConsolePrint("FIXED_MODEL_NAME: [%s]", model);
+        }
 
-uint32_t HooksSynergy::OperatorNewHook(uint32_t size)
-{
-    if(size <= 0) return (uint32_t)operator new(size);
-
-    return (uint32_t)operator new(size*1.4);
-}
-
-uint32_t HooksSynergy::OperatorNewArrayHook(uint32_t size)
-{
-    if(size <= 0) return (uint32_t)operator new[](size);
-
-    return (uint32_t)operator new[](size*3.0);
-}
-
-uint32_t HooksSynergy::ReallocHook(uint32_t old_ptr, uint32_t new_size)
-{
-    if(new_size <= 0) return (uint32_t)realloc((void*)old_ptr, new_size);
-
-    return (uint32_t)realloc((void*)old_ptr, new_size*1.2);
+        if(fixed_script)
+        {
+            rootconsole->ConsolePrint("FIXED_SCRIPT_NAME: [%s]", script);
+        }
+    }
 }
 
 uint32_t GetPassengerIndex(uint32_t player, uint32_t player_vehicle)
@@ -537,12 +523,29 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
 
     RemoveBadEnts();
 
+    functions.CleanupDeleteList(0);
+
+    //SimulateEntities
+    pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x0074E6A0);
+    pDynamicOneArgFunc(simulating);
+
+    functions.CleanupDeleteList(0);
+    
+    RemoveBadEnts();
+
+    SpawnPlayers();
+    RemoveDanglingRestoredVehicles();
+    EnterVehicles(restore_vehicle_list);
+
+    UpdateAllCollisions();
+
     if(savegame)
     {
         rootconsole->ConsolePrint("Saving game!");
 
         save_frames = 0;
 
+        FixCarSlashes();
         MakePlayersLeaveVehicles();
 
         functions.CleanupDeleteList(0);
@@ -563,23 +566,6 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     }
 
     RemoveBadEnts();
-
-    SpawnPlayers();
-    RemoveDanglingRestoredVehicles();
-    EnterVehicles(restore_vehicle_list);
-
-    RemoveBadEnts();
-
-    functions.CleanupDeleteList(0);
-
-    //SimulateEntities
-    pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x0074E6A0);
-    pDynamicOneArgFunc(simulating);
-
-    functions.CleanupDeleteList(0);
-    
-    RemoveBadEnts();
-    UpdateAllCollisions();
 
     functions.CleanupDeleteList(0);
 

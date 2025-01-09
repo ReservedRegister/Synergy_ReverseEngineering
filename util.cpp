@@ -75,6 +75,30 @@ void HookFunctionsUtil()
 
     HookFunction(dedicated_srv, dedicated_srv_size, (void*)(functions.PackedStoreDestructor), (void*)HooksUtil::PackedStoreDestructorHook);
     HookFunction(dedicated_srv, dedicated_srv_size, (void*)(functions.CanSatisfyVpkCacheInternal), (void*)HooksUtil::CanSatisfyVpkCacheInternalHook);
+
+    HookFunction(server_srv, server_srv_size, (void*)malloc, (void*)HooksUtil::MallocHookSmall);
+    HookFunction(dedicated_srv, dedicated_srv_size, (void*)malloc, (void*)HooksUtil::MallocHookLarge);
+}
+
+bool FixSlashes(char* string)
+{
+    bool fixed_name = false;
+
+    if(string == NULL)
+        return fixed_name;
+
+    for(int i = 0; i <= (int)strlen((char*)string); i++)
+    {
+        char byte = (char)(*(uint8_t*)(string+i));
+
+        if(byte == '\\')
+        {
+            *(uint8_t*)(string+i) = (uint8_t)'/';
+            fixed_name = true;
+        }
+    }
+
+    return fixed_name;
 }
 
 void SpawnPlayers()
@@ -105,6 +129,49 @@ void SpawnPlayers()
     }
 
     *player_spawn_list = NULL;
+}
+
+uint32_t HooksUtil::CallocHook(uint32_t nitems, uint32_t size)
+{
+    if(nitems <= 0) return (uint32_t)calloc(nitems, size);
+
+    uint32_t enlarged_size = nitems*2.5;
+    return (uint32_t)calloc(enlarged_size, size);
+}
+
+uint32_t HooksUtil::MallocHookSmall(uint32_t size)
+{
+    if(size <= 0) return (uint32_t)malloc(size);
+    
+    return (uint32_t)malloc(size*1.3);
+}
+
+uint32_t HooksUtil::MallocHookLarge(uint32_t size)
+{
+    if(size <= 0) return (uint32_t)malloc(size);
+
+    return (uint32_t)malloc(size*3.0);
+}
+
+uint32_t HooksUtil::OperatorNewHook(uint32_t size)
+{
+    if(size <= 0) return (uint32_t)operator new(size);
+
+    return (uint32_t)operator new(size*1.4);
+}
+
+uint32_t HooksUtil::OperatorNewArrayHook(uint32_t size)
+{
+    if(size <= 0) return (uint32_t)operator new[](size);
+
+    return (uint32_t)operator new[](size*3.0);
+}
+
+uint32_t HooksUtil::ReallocHook(uint32_t old_ptr, uint32_t new_size)
+{
+    if(new_size <= 0) return (uint32_t)realloc((void*)old_ptr, new_size);
+
+    return (uint32_t)realloc((void*)old_ptr, new_size*1.2);
 }
 
 uint32_t HooksUtil::EmptyCall()

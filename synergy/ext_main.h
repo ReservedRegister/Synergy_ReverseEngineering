@@ -5,6 +5,7 @@ bool InitExtensionSynergy();
 void ApplyPatchesSynergy();
 void HookFunctionsSynergy();
 
+void FixCarSlashes();
 uint32_t GetPassengerIndex(uint32_t player, uint32_t player_vehicle);
 void MakePlayersLeaveVehicles();
 void RemoveDanglingRestoredVehicles();
@@ -13,12 +14,6 @@ void EnterVehicles();
 class HooksSynergy
 {
 public:
-	static uint32_t CallocHook(uint32_t nitems, uint32_t size);
-	static uint32_t MallocHookSmall(uint32_t size);
-	static uint32_t MallocHookLarge(uint32_t size);
-	static uint32_t OperatorNewHook(uint32_t size);
-	static uint32_t OperatorNewArrayHook(uint32_t size);
-	static uint32_t ReallocHook(uint32_t old_ptr, uint32_t new_size);
 	static uint32_t DirectMallocHookDedicatedSrv(uint32_t arg0);
 	static uint32_t SimulateEntitiesHook(uint8_t simulating);
 	static uint32_t RestorePlayerHook(uint32_t arg0, uint32_t arg1);
