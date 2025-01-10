@@ -779,18 +779,41 @@ bool IsVectorNaN(uint32_t base)
     return false;
 }
 
+bool IsValidVector(uint32_t base)
+{
+    float s0 = *(float*)(base);
+    float s1 = *(float*)(base+4);
+    float s2 = *(float*)(base+8);
+
+    // Check for NaN and infinity
+    if(isnan(s0) || isnan(s1) || isnan(s2) ||
+        isinf(s0) || isinf(s1) || isinf(s2))
+        return false;
+
+    // Optional: Check for denormalized values
+    if(is_denormalized(s0) || is_denormalized(s1) || is_denormalized(s2))
+        return false;
+
+    return true;
+}
+
 bool IsEntityPositionReasonable(uint32_t v)
 {
     float x = *(float*)(v);
     float y = *(float*)(v+4);
     float z = *(float*)(v+8);
 
-    float r = 32767.0f;
+    if(IsValidVector(v))
+    {
+        float r = 32767.0f;
 
-    return
-        x > -r && x < r &&
-        y > -r && y < r &&
-        z > -r && z < r;
+        return
+            x > -r && x < r &&
+            y > -r && y < r &&
+            z > -r && z < r;
+    }
+
+    return false;
 }
 
 void InsertEntityToCollisionsList(uint32_t ent)
@@ -1050,8 +1073,9 @@ void RemoveEntityNormal(uint32_t entity_object, bool validate)
         {
             //Synergy
             extern bool saving_now;
+            extern bool savegame_internal;
 
-            if(saving_now)
+            if(saving_now || savegame_internal)
             {
                 InstaKill(object_verify, true);
                 rootconsole->ConsolePrint("WARNING: Removing [%s] while a save file is being made!", classname);
@@ -1367,4 +1391,14 @@ EntityKV* CreateNewEntityKV(uint32_t refHandle, uint32_t keyIn, uint32_t valueIn
     kv->value = valueIn;
 
     return kv;
+}
+
+bool is_denormalized(float value)
+{
+    return fpclassify(value) == FP_SUBNORMAL;
+}
+
+bool is_negative_zero(float value)
+{
+    return value == 0.0 && signbit(value);
 }

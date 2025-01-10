@@ -1,6 +1,8 @@
 #ifndef UTIL_H
 #define UTIL_H
 
+#include <math.h>
+
 typedef enum {
     SYNERGY,
     BLACK_MESA
@@ -208,5 +210,8 @@ void InsertEntityToCollisionsList(uint32_t ent);
 void DisablePlayerCollisions();
 void DisablePlayerWorldSpawnCollision();
 bool FixSlashes(char* string);
+bool IsValidVector(uint32_t base);
+bool is_denormalized(float value);
+bool is_negative_zero(float value);
 
 #endif

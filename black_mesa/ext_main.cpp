@@ -4,8 +4,6 @@
 #include "ext_main.h"
 #include "hooks_specific.h"
 
-#include <math.h>
-
 bool InitExtensionBlackMesa()
 {
     if(loaded_extension)

@@ -6,6 +6,7 @@
 
 int save_frames;
 bool saving_now;
+bool savegame_internal;
 uint32_t global_restore_player;
 ValueList restore_vehicle_list;
 ValueList dangling_restore_vehicles;
@@ -84,6 +85,7 @@ bool InitExtensionSynergy()
 
     save_frames = 0;
     saving_now = false;
+    savegame_internal = false;
     global_restore_player = 0;
     restore_vehicle_list = AllocateValuesList();
     dangling_restore_vehicles = AllocateValuesList();
@@ -545,9 +547,6 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
 
         save_frames = 0;
 
-        FixCarSlashes();
-        MakePlayersLeaveVehicles();
-
         functions.CleanupDeleteList(0);
 
         saving_now = true;
@@ -559,8 +558,6 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
         saving_now = false;
 
         functions.CleanupDeleteList(0);
-
-        EnterVehicles(save_player_vehicles_list);
 
         savegame = false;
     }
@@ -616,10 +613,31 @@ uint32_t HooksSynergy::fix_wheels_hook(uint32_t arg0, uint32_t arg1, uint32_t ar
     return pDynamicThreeArgFunc(arg0, arg1, arg2);
 }
 
+uint32_t HooksSynergy::SaveGameStateHook(uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3)
+{
+    pFourArgProt pDynamicFourArgFunc;
+
+    FixCarSlashes();
+    MakePlayersLeaveVehicles();
+
+    savegame_internal = true;
+
+    pDynamicFourArgFunc = (pFourArgProt)(server_srv + 0x00BE5840);
+    uint32_t returnVal = pDynamicFourArgFunc(arg0, arg1, arg2, arg3);
+
+    savegame_internal = false;
+
+    EnterVehicles(save_player_vehicles_list);
+
+    return returnVal;
+}
+
 void HookFunctionsSynergy()
 {
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00BEC530), (void*)HooksSynergy::AutosaveHook);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00BDC650), (void*)HooksSynergy::RestorePlayerHook);
+    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00BE5840), (void*)HooksSynergy::SaveGameStateHook);
+    
     HookFunction(synergy_srv, synergy_srv_size, (void*)(synergy_srv + 0x000647A0), (void*)HooksUtil::EmptyCall);
     HookFunction(synergy_srv, synergy_srv_size, (void*)(synergy_srv + 0x00065910), (void*)HooksUtil::EmptyCall);
 
