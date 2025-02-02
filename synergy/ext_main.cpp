@@ -621,6 +621,8 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
 
     functions.CleanupDeleteList(0);
 
+    ReplicateCheatsOnClient();
+
     uint32_t firstplayer = functions.FindEntityByClassname(fields.CGlobalEntityList, 0, (uint32_t)"player");
 
     if(!firstplayer)
@@ -694,7 +696,6 @@ uint32_t HooksSynergy::SimulateEntitiesHook(uint8_t simulating)
     RemoveBadEnts();
 
     CorrectPhysics();
-    ReplicateCheatsOnClient();
     
     return 0;
 }

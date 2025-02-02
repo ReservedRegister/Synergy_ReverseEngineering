@@ -452,6 +452,8 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
 
     functions.CleanupDeleteList(0);
 
+    ReplicateCheatsOnClient();
+
     uint32_t firstPlayer = functions.FindEntityByClassname(fields.CGlobalEntityList, 0, (uint32_t)"player");
 
     if(!firstPlayer)
@@ -502,7 +504,6 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
     RemoveBadEnts();
 
     CorrectPhysics();
-    ReplicateCheatsOnClient();
 
     return 0;
 }

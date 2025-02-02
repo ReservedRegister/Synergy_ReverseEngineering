@@ -410,9 +410,6 @@ uint32_t HooksUtil::SV_ReplicateConVarChangeHook(uint32_t arg0, uint32_t arg1)
 {
     pTwoArgProt pDynamicTwoArgFunc;
 
-    if(arg0 == fields.sv_cheats_cvar)
-        arg1 = (uint32_t)"1";
-
     pDynamicTwoArgFunc = (pTwoArgProt)(functions.SV_ReplicateConVarChange);
     return pDynamicTwoArgFunc(arg0, arg1);
 }
