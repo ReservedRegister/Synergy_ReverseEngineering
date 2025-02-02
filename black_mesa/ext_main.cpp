@@ -62,6 +62,8 @@ bool InitExtensionBlackMesa()
     fields.CGlobalEntityList = server_srv + 0x017B6BE0;
     fields.sv = engine_srv + 0x00315E80;
     fields.RemoveImmediateSemaphore = server_srv + 0x01811920;
+    fields.sv_cheats_cvar = engine_srv + 0x00315BA0;
+    fields.deferMindist = vphysics_srv + 0x001B5CA0;
 
     offsets.classname_offset = 0x64;
     offsets.abs_origin_offset = 0x294;
@@ -95,6 +97,8 @@ bool InitExtensionBlackMesa()
     functions.CleanupDeleteList = (pOneArgProt)(server_srv + 0x007E6D20);
     functions.PackedStoreDestructor = (pOneArgProt)(dedicated_srv + 0x000B1AE0);
     functions.CanSatisfyVpkCacheInternal = (pSevenArgProt)(dedicated_srv + 0x000B5460);
+    functions.AddSearchPath = (pFourArgProt)(dedicated_srv + 0x00052390);
+    functions.SV_ReplicateConVarChange = (pTwoArgProt)(engine_srv + 0x0016A6C0);
 
     PopulateHookExclusionListsBlackMesa();
 
@@ -177,6 +181,76 @@ void HookFunctionsBlackMesa()
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00A92540), (void*)HooksBlackMesa::UTIL_GetLocalPlayerHook);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x0046B510), (void*)HooksBlackMesa::TestGroundMove);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00A02D40), (void*)HooksBlackMesa::ShouldHitEntityHook);
+    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00295760), (void*)HooksBlackMesa::VPhysicsUpdateHook);
+}
+
+void CorrectVphysicsEntity(uint32_t ent)
+{
+    pThreeArgProt pDynamicThreeArgFunc;
+    pFourArgProt pDynamicFourArgFunc;
+
+    if(IsEntityValid(ent))
+    {
+        uint32_t vphysics_object = *(uint32_t*)(ent+0x1F8);
+
+        if(vphysics_object)
+        {
+            Vector current_origin;
+            Vector current_angles;
+            Vector empty_vector;
+
+            //GetPosition
+            pDynamicThreeArgFunc = (pThreeArgProt)(  *(uint32_t*)((*(uint32_t*)(vphysics_object))+0xC0)  );
+            pDynamicThreeArgFunc(vphysics_object, (uint32_t)&current_origin, (uint32_t)&current_angles);
+
+            //rootconsole->ConsolePrint("%f %f %f", current_angles.x, current_angles.y, current_angles.z);
+
+            if(!IsEntityPositionReasonable((uint32_t)&current_origin) && !IsEntityPositionReasonable((uint32_t)&current_angles))
+            {
+                //SetPosition
+                pDynamicFourArgFunc = (pFourArgProt)(  *(uint32_t*)((*(uint32_t*)(vphysics_object))+0xB8)  );
+                pDynamicFourArgFunc(vphysics_object, (uint32_t)&empty_vector, (uint32_t)&empty_vector, 1);
+
+                rootconsole->ConsolePrint("Corrected vphysics origin & angles!");
+
+                return;
+            }
+
+            if(!IsEntityPositionReasonable((uint32_t)&current_origin))
+            {
+                //SetPosition
+                pDynamicFourArgFunc = (pFourArgProt)(  *(uint32_t*)((*(uint32_t*)(vphysics_object))+0xB8)  );
+                pDynamicFourArgFunc(vphysics_object, (uint32_t)&empty_vector, (uint32_t)&current_angles, 1);
+
+                rootconsole->ConsolePrint("Corrected vphysics origin!");
+            }
+
+            if(!IsEntityPositionReasonable((uint32_t)&current_angles))
+            {
+                //SetPosition
+                pDynamicFourArgFunc = (pFourArgProt)(  *(uint32_t*)((*(uint32_t*)(vphysics_object))+0xB8)  );
+                pDynamicFourArgFunc(vphysics_object, (uint32_t)&current_origin, (uint32_t)&empty_vector, 1);
+
+                rootconsole->ConsolePrint("Corrected vphysics angles!");
+            }
+        }
+    }
+}
+
+uint32_t HooksBlackMesa::VPhysicsUpdateHook(uint32_t arg0, uint32_t arg1)
+{
+    pTwoArgProt pDynamicTwoArgFunc;
+
+    if(IsEntityValid(arg0))
+    {
+        CorrectVphysicsEntity(arg0);
+
+        pDynamicTwoArgFunc = (pTwoArgProt)(server_srv + 0x00295760);
+        return pDynamicTwoArgFunc(arg0, arg1);
+    }
+
+    rootconsole->ConsolePrint("Entity was invalid in vphysics update!");
+    return 0;
 }
 
 uint32_t HooksBlackMesa::RagdollBreakHook(uint32_t arg0, uint32_t arg1, uint32_t arg2)
@@ -426,6 +500,9 @@ uint32_t HooksBlackMesa::SimulateEntitiesHook(uint32_t arg0)
     functions.CleanupDeleteList(0);
 
     RemoveBadEnts();
+
+    CorrectPhysics();
+    ReplicateCheatsOnClient();
 
     return 0;
 }

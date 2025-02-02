@@ -60,6 +60,9 @@ void PopulateHookExclusionListsSynergy()
 {
     hook_exclude_list_base[0] = server_srv;
     hook_exclude_list_offset[0] = 0x008A0D7F;
+
+    hook_exclude_list_base[1] = server_srv;
+    hook_exclude_list_offset[1] = 0x005D025B;
 }
 
 uint32_t GetCBaseEntitySynergy(uint32_t EHandle)

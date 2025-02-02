@@ -11,8 +11,6 @@ extern bool is_currently_ragdoll_breaking;
 void InitCoreBlackMesa();
 void PopulateHookExclusionListsBlackMesa();
 uint32_t GetCBaseEntityBlackMesa(uint32_t EHandle);
-void InstaKillBlackMesa(uint32_t entity_object, bool validate);
-void RemoveEntityNormalBlackMesa(uint32_t entity_object, bool validate);
 
 void CheckForLocation();
 

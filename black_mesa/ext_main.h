@@ -4,7 +4,7 @@
 bool InitExtensionBlackMesa();
 void ApplyPatchesBlackMesa();
 void HookFunctionsBlackMesa();
-void DisableCacheCvars();
+void CorrectVphysicsEntity(uint32_t ent);
 
 class HooksBlackMesa
 {
@@ -18,6 +18,7 @@ public:
 	static uint32_t VpkCacheBufferAllocHook(uint32_t arg0);
 	static uint32_t RagdollBreakHook(uint32_t arg0, uint32_t arg1, uint32_t arg2);
 	static uint32_t CreateNoSpawnHookRagdollBreaking(uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3);
+	static uint32_t VPhysicsUpdateHook(uint32_t arg0, uint32_t arg1);
 };
 
 #endif

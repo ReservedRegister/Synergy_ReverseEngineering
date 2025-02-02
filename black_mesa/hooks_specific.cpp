@@ -18,7 +18,6 @@ void HookFunctionsSpecificBlackMesa()
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x004F0FC0), (void*)NativeHooks::TakeDamageHook);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00793A60), (void*)NativeHooks::CPropHevCharger_ShouldApplyEffect);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00793FD0), (void*)NativeHooks::CPropRadiationCharger_ShouldApplyEffect);
-    HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x00A24570), (void*)NativeHooks::ScriptThinkEntCheck);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x0069DB20), (void*)NativeHooks::LaunchMortarHook);
     HookFunction(server_srv, server_srv_size, (void*)(server_srv + 0x004CE5F0), (void*)NativeHooks::DispatchAnimEventsHook);
 }
@@ -49,20 +48,6 @@ uint32_t NativeHooks::LaunchMortarHook(uint32_t arg0)
 
     rootconsole->ConsolePrint("Gonarch was invalid!");
     return 0;
-}
-
-uint32_t NativeHooks::ScriptThinkEntCheck(uint32_t arg0)
-{
-    pOneArgProt pDynamicOneArgFunc;
-
-    pDynamicOneArgFunc = (pOneArgProt)(server_srv + 0x00A24570);
-    uint32_t returnVal = pDynamicOneArgFunc(arg0);
-
-    uint32_t refHandle = *(uint32_t*)(arg0+0x3B0);
-    uint32_t chkRef = GetCBaseEntityBlackMesa(refHandle);
-
-    if(!chkRef) return 0;
-    return returnVal;
 }
 
 uint32_t NativeHooks::CalcAbsolutePosition(uint32_t arg0)

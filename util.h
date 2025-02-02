@@ -31,6 +31,8 @@ public:
 	static uint32_t CanSatisfyVpkCacheInternalHook(uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5, uint32_t arg6);
 	static uint32_t PackedStoreDestructorHook(uint32_t arg0);
 	static uint32_t PlayerSpawnHook(uint32_t arg0);
+	static uint32_t AddSearchPathHook(uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3);
+	static uint32_t SV_ReplicateConVarChangeHook(uint32_t arg0, uint32_t arg1);
 };
 
 typedef uint32_t (*pZeroArgProt)();
@@ -52,6 +54,8 @@ typedef struct _game_fields {
 	uint32_t CGlobalEntityList;
 	uint32_t sv;
 	uint32_t RemoveImmediateSemaphore;
+	uint32_t sv_cheats_cvar;
+	uint32_t deferMindist;
 } game_fields;
 
 typedef struct _game_offsets {
@@ -89,7 +93,14 @@ typedef struct _game_functions {
 	pOneArgProt ClearAllEntities;
 	pOneArgProt PackedStoreDestructor;
 	pSevenArgProt CanSatisfyVpkCacheInternal;
+	pFourArgProt AddSearchPath;
+	pTwoArgProt SV_ReplicateConVarChange;
 } game_functions;
+
+typedef struct _Signature {
+	uint8_t signature[512];
+	int signature_size;
+} Signature;
 
 typedef struct _Vector {
 	float x = 0;
@@ -172,11 +183,16 @@ extern bool server_sleeping;
 extern uint32_t global_vpk_cache_buffer;
 extern uint32_t current_vpk_buffer_ref;
 extern ValueList leakedResourcesVpkSystem;
+extern ValueList game_search_paths;
 
 void InitUtil();
 void* copy_val(void* val, size_t copy_size);
 bool IsAddressExcluded(uint32_t base_address, uint32_t search_address);
 void HookFunction(uint32_t base_address, uint32_t size, void* target_pointer, void* hook_pointer);
+void HookMemoryBlock(uint32_t base_address, uint32_t size, Signature start_signatures[32], int start_signatures_size, Signature end_signatures[32], int end_signatures_size, Signature args_signatures[32], Signature stack_machine_code[32], int stack_arguments_size, Signature no_operation_signatures[32], int no_operation_signatures_size, uint32_t estimated_block_size_min, uint32_t estimated_block_size_max, int expected_arguments, void* hook_pointer);
+bool ApplyBlockHook(uint32_t block_start_start, uint32_t block_end_end, Signature args_signatures[32], Signature stack_machine_code[32], int stack_arguments_size, Signature no_operation_signatures[32], int no_operation_signatures_size, int expected_arguments, void* hook_pointer);
+uint32_t ApplyNoOperation(uint32_t block_start_start, uint32_t block_end_end, Signature no_operation_signatures[32], int no_operation_signatures_size);
+uint32_t FindSignature(uint32_t block_start_start, uint32_t block_end_end, Signature signature_main);
 Library* FindLibrary(char* lib_name, bool less_intense_search);
 Library* LoadLibrary(char* library_full_path);
 void ClearLoadedLibraries();
@@ -197,6 +213,8 @@ void LogVpkMemoryLeaks();
 void FixPlayerCollisionGroup();
 void HookFunctionsUtil();
 void SpawnPlayers();
+void CorrectPhysics();
+void ReplicateCheatsOnClient();
 
 ValueList AllocateValuesList();
 Value* CreateNewValue(void* valueInput);
@@ -205,6 +223,7 @@ bool IsInValuesList(ValueList list, void* searchVal, pthread_mutex_t* lockInput)
 bool RemoveFromValuesList(ValueList list, void* searchVal, pthread_mutex_t* lockInput);
 int ValueListItems(ValueList list, pthread_mutex_t* lockInput);
 bool InsertToValuesList(ValueList list, Value* head, pthread_mutex_t* lockInput, bool tail, bool duplicate_chk);
+Value* FindStringInList(ValueList list, const char* search_val, pthread_mutex_t* lockInput, bool substring, Value* start_value);
 EntityKV* CreateNewEntityKV(uint32_t refHandle, uint32_t keyIn, uint32_t valueIn);
 void InsertEntityToCollisionsList(uint32_t ent);
 void DisablePlayerCollisions();
